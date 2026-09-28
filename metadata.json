@@ -1,0 +1,6 @@
+{
+  "name": "Splunk Cluster Doctor & Architecture Studio",
+  "description": "Enterprise Splunk SVA Architecture Auditor, Sizing Calculator, Management Nodes & License Hub, Heartbeat Radar, and Predictive Bottleneck Diagnostic Studio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
