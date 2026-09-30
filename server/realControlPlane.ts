@@ -352,7 +352,7 @@ export function registerRealControlPlane(app: express.Express, deps: Registratio
 
   app.post('/api/real/hardening/apply', auth, async (req, res) => {
     if (!isRoot()) return fail(res, 403, 'Hardening apply requires root privileges.');
-    const selected = new Set(Array.isArray(req.body?.controls) ? req.body.controls.map(String) : []);
+    const selected: Set<string> = new Set<string>(Array.isArray(req.body?.controls) ? req.body.controls.map(String) : []);
     const allowed = new Set(['limits','sysctl','firewall-3000','chrony']);
     const unknown = [...selected].filter(x => !allowed.has(x));
     if (unknown.length) return fail(res, 400, 'Unsupported hardening control requested.', unknown);
