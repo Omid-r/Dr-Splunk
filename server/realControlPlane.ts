@@ -209,7 +209,36 @@ function healthFindings() {
   return { os: osr, findings };
 }
 
-const REMOTE_HARDEN_SCRIPT = '#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p /etc/security/limits.d /etc/sysctl.d\ncat > /etc/security/limits.d/99-splunk-orchestrator.conf <<\\'EOF\\'\nsplunk soft nofile 65535\nsplunk hard nofile 65535\nsplunk soft nproc 8192\nsplunk hard nproc 8192\nEOF\ncat > /etc/sysctl.d/99-splunk-orchestrator.conf <<\\'EOF\\'\nvm.swappiness=1\nvm.max_map_count=262144\nnet.ipv4.tcp_syncookies=1\nfs.file-max=2097152\nEOF\nsysctl --system\nif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then firewall-cmd --permanent --add-port=3000/tcp; firewall-cmd --reload; fi\nsystemctl enable --now chronyd\nprintf \\'[REAL] hardening baseline applied\\\\n\\'\\n';
+const REMOTE_HARDEN_SCRIPT = String.raw`#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p /etc/security/limits.d /etc/sysctl.d
+
+cat > /etc/security/limits.d/99-splunk-orchestrator.conf <<'EOF'
+splunk soft nofile 65535
+splunk hard nofile 65535
+splunk soft nproc 8192
+splunk hard nproc 8192
+EOF
+
+cat > /etc/sysctl.d/99-splunk-orchestrator.conf <<'EOF'
+vm.swappiness=1
+vm.max_map_count=262144
+net.ipv4.tcp_syncookies=1
+fs.file-max=2097152
+EOF
+
+sysctl --system
+
+if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+  firewall-cmd --permanent --add-port=3000/tcp
+  firewall-cmd --reload
+fi
+
+systemctl enable --now chronyd
+
+printf '%s\\n' '[REAL] hardening baseline applied'
+`;
 
 async function remoteExec(host: string, sshUser: string, sshPort: number, script: string) {
   const safeUser = sshUser.replace(/[^a-zA-Z0-9._-]/g, '');
