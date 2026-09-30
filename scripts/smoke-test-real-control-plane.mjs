@@ -66,8 +66,10 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-const child = spawn(process.execPath, ['dist/server.cjs'], {
+const appPath = new URL('../dist/server.cjs', import.meta.url).pathname;
+const child = spawn(process.execPath, [appPath], {
   env,
+  cwd: env.HOME,
   stdio: ['ignore', 'pipe', 'pipe']
 });
 let stdout = '';
