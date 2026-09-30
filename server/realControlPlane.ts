@@ -408,14 +408,14 @@ export function registerRealControlPlane(app: express.Express, deps: Registratio
         logs.push(r.stdout,r.stderr);
         if(r.code!==0) throw new Error('Local Splunk RPM installation failed');
         const detected=findSplunkHome();
-        home=detected.detected?detected.path:undefined;
+        home=detected||undefined;
       } else {
         const target='/opt/splunk';
         fs.mkdirSync(target,{recursive:true});
         const r=await command('tar',['-xzf',artifact,'-C','/opt'],{timeoutMs:180000});
         logs.push(r.stdout,r.stderr);
         if(r.code!==0) throw new Error('Local Splunk archive extraction failed');
-        home=fs.existsSync(path.join(target,'bin','splunk'))?target:findSplunkHome().path;
+        home=fs.existsSync(path.join(target,'bin','splunk'))?target:(findSplunkHome()||undefined);
       }
       if(!home || !fs.existsSync(path.join(home,'bin','splunk'))) throw new Error('Installation completed but Splunk binary was not detected');
       const boot=await command(path.join(home,'bin','splunk'),['enable','boot-start','-systemd-managed','1','-user','splunk'],{timeoutMs:30000,cwd:home});
