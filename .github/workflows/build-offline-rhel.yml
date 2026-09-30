@@ -87,9 +87,10 @@ jobs:
 
           cp -a "$BASE/." "$TARGET/"
 
-          chmod -R u+rwX,go+rX "$TARGET"
-          chmod +x "$TARGET/node-runtime/bin/node" 2>/dev/null || true
-          chmod +x "$TARGET/setup.sh" "$TARGET/scripts/"*.sh 2>/dev/null || true
+          find "$TARGET" -type d -exec chmod 755 {} +
+          find "$TARGET" -type f -exec chmod 644 {} +
+          chmod +x "$TARGET/node-runtime/bin/node" "$TARGET/setup.sh" "$TARGET/scripts/"*.sh 2>/dev/null || true
+          chmod 600 "$TARGET/data/master-signing.key" 2>/dev/null || true
 
           cat > /etc/systemd/system/splunk-doctor.service <<EOF2
           [Unit]
@@ -107,6 +108,7 @@ jobs:
           Environment=NODE_ENV=production
           Environment=PORT=3000
           Environment=SPLUNK_HOME=/opt/splunk
+          UMask=0077
           LimitNOFILE=65536
           LimitNPROC=65536
 
