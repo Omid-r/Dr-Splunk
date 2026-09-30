@@ -2312,9 +2312,9 @@ PASSWORD = ${password}
   app.get('/api/splunk/detect-version', async (req, res) => {
     const splunkHome = process.env.SPLUNK_HOME || '/opt/splunk';
     const binaryPath = path.join(splunkHome, 'bin/splunk');
-    let version = '9.2.1';
-    let build = '5a1e7238dc8e';
-    let osInfo = 'Linux x86_64 (Enterprise)';
+    let version = 'unknown';
+    let build = 'unknown';
+    let osInfo = 'unknown';
     let isRealBinary = false;
     let rawOutput = '';
 
@@ -2366,26 +2366,7 @@ PASSWORD = ${password}
   // API: List local available packages for parallel installation
   app.get('/api/parallel-cluster/packages', (req, res) => {
     const searchDirs = ['/opt/splunk_packages', '/tmp', '/opt', process.cwd()];
-    const foundPackages: Array<{ name: string; path: string; sizeMb: number; type: string }> = [
-      {
-        name: 'splunk-9.2.1-enterprise-linux-x86_64.tgz',
-        path: '/opt/splunk_packages/splunk-9.2.1-enterprise-linux-x86_64.tgz',
-        sizeMb: 482,
-        type: 'Official TGZ Archive'
-      },
-      {
-        name: 'splunk-9.2.0-enterprise-linux-x86_64.tgz',
-        path: '/opt/splunk_packages/splunk-9.2.0-enterprise-linux-x86_64.tgz',
-        sizeMb: 476,
-        type: 'Official TGZ Archive'
-      },
-      {
-        name: 'splunk-9.1.4-linux-2.6-x86_64.rpm',
-        path: '/opt/splunk_packages/splunk-9.1.4-linux-2.6-x86_64.rpm',
-        sizeMb: 468,
-        type: 'RHEL / CentOS RPM Package'
-      }
-    ];
+    const foundPackages: Array<{ name: string; path: string; sizeMb: number; type: string }> = [];
 
     searchDirs.forEach(dir => {
       try {
@@ -2430,6 +2411,9 @@ PASSWORD = ${password}
       ports = { web: 8001, rest: 8090, splunkTcp: 9998, kvstore: 8192, hec: 8088 }
     } = req.body;
 
+    if (typeof process.getuid === 'function' && process.getuid() !== 0) {
+      return res.status(403).json({ success: false, error: 'Parallel Splunk installation requires root privileges.' });
+    }
     parallelActivePorts = { ...parallelActivePorts, ...ports };
     const log: string[] = [];
     const targetDir = '/opt/splunk_parallel';
@@ -2454,7 +2438,8 @@ PASSWORD = ${password}
       log.push(`[2/6] Extracting binary package: ${pkgToExtract} into ${targetDir}...`);
       try {
         if (pkgToExtract.endsWith('.tgz') || pkgToExtract.endsWith('.tar.gz')) {
-          await runCommand(`tar -xzf "${pkgToExtract}" -C "${targetDir}" --strip-components=1 2>/dev/null || true`);
+          const extract = await runCommand(`tar -xzf "${pkgToExtract}" -C "${targetDir}" --strip-components=1`);
+          if (extract.code !== 0) throw new Error('Splunk archive extraction failed: ' + (extract.stderr || extract.stdout));
         }
         log.push(`[SUCCESS] Extracted archive files.`);
       } catch (_) {}
@@ -2465,18 +2450,23 @@ PASSWORD = ${password}
       } catch (_) {}
       log.push(`[SUCCESS] Production binaries linked.`);
     } else {
-      log.push(`[2/6] Initializing self-contained offline Splunk Engine...`);
-      log.push(`[SUCCESS] Standalone runtime verified.`);
+      throw new Error('No real Splunk artifact or existing /opt/splunk installation was provided.');
+    }
+
+    if (!fs.existsSync(path.join(targetDir, 'bin/splunk'))) {
+      throw new Error('Splunk artifact did not produce targetDir/bin/splunk.');
     }
 
     // 3. Firewall Ports opening
     log.push(`[3/6] Opening non-colliding firewall ports (Web:${ports.web}, REST:${ports.rest}, Ingest:${ports.splunkTcp}, KVStore:${ports.kvstore})...`);
     try {
-      await runCommand(`firewall-cmd --zone=public --add-port=${ports.web}/tcp --add-port=${ports.rest}/tcp --add-port=${ports.splunkTcp}/tcp --add-port=${ports.kvstore}/tcp --permanent 2>/dev/null && firewall-cmd --reload 2>/dev/null || true`);
-      log.push(`[SUCCESS] Firewall rules active for ports ${ports.web}, ${ports.rest}, ${ports.splunkTcp}, ${ports.kvstore}.`);
-    } catch (_) {
-      log.push(`[INFO] Network ports registered in container routing table.`);
-    }
+      if (fs.existsSync('/usr/bin/firewall-cmd') || fs.existsSync('/usr/sbin/firewall-cmd')) {
+        const fw = await runCommand(`firewall-cmd --zone=public --add-port=${ports.web}/tcp --add-port=${ports.rest}/tcp --add-port=${ports.splunkTcp}/tcp --add-port=${ports.kvstore}/tcp --permanent && firewall-cmd --reload`);
+        if (fw.code !== 0) throw new Error('Firewall configuration failed: ' + (fw.stderr || fw.stdout));
+        log.push(`[SUCCESS] Firewall rules active for ports ${ports.web}, ${ports.rest}, ${ports.splunkTcp}, ${ports.kvstore}.`);
+      } else {
+        log.push('[INFO] firewalld is not installed; firewall was not changed.');
+      }
 
     // 4. Writing non-colliding base configuration files
     log.push(`[4/6] Generating isolated configuration stanzas...`);
@@ -2523,23 +2513,30 @@ PASSWORD = ${password}
       if (fs.existsSync(scriptPath)) {
         await runCommand(`chmod +x "${scriptPath}"`);
         const runRes = await runCommand(`bash "${scriptPath}" /opt/splunk "${targetDir}" ${ports.web} ${ports.rest} ${ports.splunkTcp} ${ports.kvstore}`);
-        if (runRes.stdout) {
-          log.push(runRes.stdout);
-        }
+        if (runRes.stdout) log.push(runRes.stdout);
+        if (runRes.stderr) log.push(runRes.stderr);
+        if (runRes.code !== 0) throw new Error('Parallel Splunk installation script failed with exit code ' + runRes.code);
       } else {
         const parallelBin = path.join(targetDir, 'bin/splunk');
         if (fs.existsSync(parallelBin)) {
           await runCommand(`chmod +x "${parallelBin}"`);
-          const startRes = await runCommand(`SPLUNK_HOME="${targetDir}" "${parallelBin}" start --accept-license --answer-yes --no-prompt 2>&1 || true`);
+          const startRes = await runCommand(`SPLUNK_HOME="${targetDir}" "${parallelBin}" start --accept-license --answer-yes --no-prompt`);
           if (startRes.stdout) log.push(startRes.stdout);
+          if (startRes.stderr) log.push(startRes.stderr);
+          if (startRes.code !== 0) throw new Error('Splunk start failed with exit code ' + startRes.code);
         }
       }
     } catch (e: any) {
       log.push(`[SPLUNK EXECUTION] ${e.message}`);
     }
 
-    log.push(`[READY] Genuine Splunk Enterprise Web UI is ACTIVE on Port ${ports.web}!`);
-    log.push(`[LOGIN URL] http://<SERVER-IP>:${ports.web}/en-US/account/login (Username: admin | Password: changeme)`);
+    const verify = await runCommand(`SPLUNK_HOME="${targetDir}" "${path.join(targetDir,'bin/splunk')}" status`, { cwd: targetDir, timeout: 15000 });
+    const verifyText = (verify.stdout || verify.stderr || '').toString();
+    if (verify.code !== 0 || !/splunkd is running|splunkweb is running/i.test(verifyText)) {
+      throw new Error('Splunk installation finished but service verification failed.');
+    }
+    log.push(`[READY] Real Splunk Enterprise service verified on Port ${ports.web}.`);
+    log.push(`[LOGIN URL] http://<SERVER-IP>:${ports.web}/en-US/account/login`);
 
     res.json({
       success: true,
@@ -2548,7 +2545,6 @@ PASSWORD = ${password}
       licenseMode,
       log,
       officialWebUrl: `http://localhost:${ports.web}/en-US/account/login`,
-      credentials: { username: 'admin', password: 'changeme' },
       installedAt: new Date().toISOString()
     });
   });
@@ -4342,7 +4338,7 @@ disabled = 0
 
   // API: Download the latest RHEL standalone tar.gz package with cache-busting headers
   app.get('/api/download/rhel-package', (req, res) => {
-    const primaryPath = path.join(process.cwd(), 'public/splunk_cluster_doctor_rhel_v1.3.0.tar.gz');
+    const primaryPath = path.join(process.cwd(), 'public/splunk_cluster_doctor_rhel_v1.4.0.tar.gz');
     const legacyPath = path.join(process.cwd(), 'public/splunk_cluster_doctor_rhel_v1.4.0.tar.gz');
     const fallbackPath = path.join(process.cwd(), 'public/splunk_doctor_standalone_ui.tar.gz');
     
@@ -4366,7 +4362,7 @@ disabled = 0
     res.setHeader('Expires', '0');
     res.setHeader('Surrogate-Control', 'no-store');
     res.setHeader('Content-Type', 'application/gzip');
-    res.setHeader('Content-Disposition', 'attachment; filename="splunk_cluster_doctor_rhel_v1.3.0.tar.gz"');
+    res.setHeader('Content-Disposition', 'attachment; filename="splunk_cluster_doctor_rhel_v1.4.0.tar.gz"');
 
     const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
