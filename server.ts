@@ -192,13 +192,18 @@ async function startServer() {
     const timeFormatted = timeNow.toLocaleTimeString() + '.' + String(timeNow.getMilliseconds()).padStart(3, '0');
     const dateFormatted = timeNow.toISOString().slice(0, 10);
 
+    const safeLogCommand = cmd
+      .replace(/(PASSWORD\s*=\s*)(["']?)[^"'\s]+/gi, '$1[REDACTED]')
+      .replace(/(pass4SymmKey\s*=\s*)([^\s]+)/gi, '$1[REDACTED]')
+      .replace(/(--password\s+)(["']?)[^"'\s]+/gi, '$1[REDACTED]')
+      .replace(/(SPLUNK_PASSWORD=)([^\s]+)/gi, '$1[REDACTED]');
     const logEntry: ServerCommandLogEntry = {
       id: entryId,
       timestamp: timeNow.toISOString(),
       toolId: options?.toolId || 'server_system',
       toolNameFa: options?.toolNameFa || 'سرویس سیستم سرور',
       toolNameEn: options?.toolNameEn || 'System Background Process',
-      command: cmd,
+      command: safeLogCommand,
       workingDir,
       user: logUser,
       status: 'running',
@@ -2938,9 +2943,20 @@ PASSWORD = ${password}
       restPort = 8090,
       tcpPort = 9998,
       kvPort = 8193,
-      adminPassword = 'changeme'
+      adminPassword,
+      pass4SymmKey
     } = req.body;
 
+    if (typeof adminPassword !== 'string' || adminPassword.length < 12) {
+      return res.status(400).json({ success: false, error: 'A real admin password of at least 12 characters is required.' });
+    }
+    if (typeof pass4SymmKey !== 'string' || pass4SymmKey.length < 12) {
+      return res.status(400).json({ success: false, error: 'A real pass4SymmKey of at least 12 characters is required.' });
+    }
+    const parallelBinary = path.join('/opt/splunk_parallel','bin','splunk');
+    if (!fs.existsSync(parallelBinary) && !fs.existsSync('/opt/splunk/bin/splunk')) {
+      return res.status(404).json({ success: false, error: 'No real Splunk binary is available for auto-healing.' });
+    }
     const logs: string[] = [];
     const parallelDir = '/opt/splunk_parallel';
     const runtimeDir = '/opt/splunk_container_runtime';
@@ -3024,7 +3040,7 @@ PASSWORD = ${password}
       // 3. Write clean, collision-free configuration files
       logs.push(`==> 3. Generating synchronized configuration stanzas (KVStore=${kvPort}, REST=${restPort})...`);
       const webConf = `[settings]\nhttpport = ${webPort}\nserver.socket_host = 0.0.0.0\nenableSplunkWebSSL = false\nstartwebserver = 1\nappServerPorts = 8066\nmgmtHostPort = 127.0.0.1:${restPort}\n`;
-      const serverConf = `[general]\nserverName = splunk-parallel-staging-01\nmgmtHostPort = 127.0.0.1:${restPort}\npass4SymmKey = changeme-parallel-key\nactive_group = Enterprise\n\n[sslConfig]\nmgmtHostPort = 127.0.0.1:${restPort}\n\n[kvstore]\nport = ${kvPort}\n`;
+pass4SymmKey = ${pass4SymmKey}
       const inputsConf = `[default]\nhost = splunk-parallel-staging-01\n\n[splunktcp://${tcpPort}]\ndisabled = 0\nqueueSize = 10MB\n`;
       const userSeedConf = `[user_info]\nUSERNAME = admin\nPASSWORD = ${adminPassword}\n`;
       const uiTourConf = `[splunk_enterprise]\nviewed = 1\n`;
@@ -3136,22 +3152,26 @@ PASSWORD = ${password}
       );
       await new Promise(r => setTimeout(r, 1500));
 
-      let httpCode = '200';
+let httpCode = '000';
       const netInfo = getSystemNetworkInfo();
       const loginUrl = `http://${netInfo.primaryIp || '127.0.0.1'}:${webPort}/en-US/account/login`;
 
       logs.push(`======================================================================`);
-      logs.push(`[SUCCESS] AI Auto-Healing Completed!`);
-      logs.push(`  Status: HTTP 200 OK`);
+      const verification = await runCommand(`curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 "http://127.0.0.1:${webPort}/en-US/account/login"`);
+      httpCode = (verification.stdout || '').trim() || '000';
+      if (httpCode !== '200' && httpCode !== '303') {
+        throw new Error('Auto-heal completed without a valid Splunk Web response: HTTP ' + httpCode);
+      }
+      logs.push(`======================================================================`);
+      logs.push(`[SUCCESS] AI Auto-Healing Completed and verified.`);
+      logs.push(`  Status: HTTP ${httpCode}`);
       logs.push(`  Login URL: ${loginUrl}`);
-      logs.push(`  Admin Username: admin | Password: ${adminPassword}`);
       logs.push(`======================================================================`);
 
       res.json({
         success: true,
         httpStatus: httpCode,
         webUrl: loginUrl,
-        credentials: { username: 'admin', password: adminPassword },
         logs,
         healedAt: new Date().toISOString()
       });
