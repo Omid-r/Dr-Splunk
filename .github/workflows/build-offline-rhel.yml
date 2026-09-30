@@ -3,13 +3,18 @@ name: build-offline-rhel
 on:
   push:
     branches:
+      - main
       - feature/real-offline-orchestrator
+      - fix/real-offline-validation-20260930
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       ref:
         description: 'Branch or tag to build'
-        required: true
-        default: 'feature/real-offline-orchestrator'
+        required: false
+        default: 'main'
 
 jobs:
   build:
@@ -36,6 +41,9 @@ jobs:
 
       - name: Build application
         run: npm run build
+
+      - name: Real control-plane smoke test
+        run: node scripts/smoke-test-real-control-plane.mjs
 
       - name: Make standalone RHEL package
         shell: bash
