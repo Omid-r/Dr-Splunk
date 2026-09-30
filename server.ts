@@ -2421,9 +2421,6 @@ PASSWORD = ${password}
     if (typeof process.getuid === 'function' && process.getuid() !== 0) {
       return res.status(403).json({ success: false, error: 'Parallel Splunk installation requires root privileges.' });
     }
-    if (typeof process.getuid === 'function' && process.getuid() !== 0) {
-      return res.status(403).json({ success: false, error: 'Parallel Splunk installation requires root privileges.' });
-    }
     if (typeof adminPassword !== 'string' || adminPassword.length < 12) {
       return res.status(400).json({ success: false, error: 'A real admin password of at least 12 characters is required.' });
     }
@@ -2635,7 +2632,7 @@ PASSWORD = ${password}
         if (!allowedFiles.has(filename)) return res.status(400).json({ success:false,error:`Unsupported config file: ${filename}`});
         let mod=String(content);
         if(filename==='inputs.conf'){
-          mod=mod.replace(/\[splunktcp:\/\/9997\]/g,`[splunktcp:${Number(targetPorts.splunkTcp)||9998}]`);
+          mod=mod.replace(/\[splunktcp:\/\/9997\]/g,`[splunktcp://${Number(targetPorts.splunkTcp)||9998}]`);
           sanitizedParams.push('inputs.conf: remapped splunktcp 9997 to selected ingest port');
         } else if(filename==='web.conf'){
           mod=mod.replace(/httpport\s*=\s*8000/g,`httpport = ${Number(targetPorts.web)||8001}`);
