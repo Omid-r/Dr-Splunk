@@ -173,23 +173,63 @@ export const SplunkFleetDiscoveryProvisioner: React.FC<SplunkFleetDiscoveryProvi
   const activeTimersRef = useRef<{ [nodeId: string]: NodeJS.Timeout[] }>({});
 
   // Trigger Subnet Scan Simulator
-  const handleTriggerSubnetScan = () => {
+  const handleTriggerSubnetScan = async () => {
     setIsScanning(true);
     setScanProgress(5);
     setIsScanCompleted(false);
-
-    const interval = setInterval(() => {
-      setScanProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsScanning(false);
-          setIsScanCompleted(true);
-          setScanDiscoveredCount(assets.length);
-          return 100;
-        }
-        return prev + 15;
+    try {
+      const res = await fetch('/api/real/network/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cidr: subnetCidr })
       });
-    }, 250);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Network scan failed');
+      const discovered = (data.nodes || []).map((n: any) => ({
+        id: n.id,
+        hostname: n.hostname || n.ip,
+        ip: n.ip,
+        status: 'discovered',
+        lifecycleStage: 'discovered',
+        installProgress: 0,
+        isConfigured: false,
+        role: 'indexer_peer',
+        site: 'site1',
+        sshPort: 22,
+        sshUser: 'root',
+        osType: 'rhel_9_4',
+        assignedPorts: {
+          splunkMgmt: n.openPorts?.includes(8089) ? 8089 : 8089,
+          splunkWeb: n.openPorts?.includes(8000) ? 8000 : undefined,
+          splunkTcp: n.openPorts?.includes(9997) ? 9997 : undefined,
+          hecPort: n.openPorts?.includes(8088) ? 8088 : undefined
+        },
+        selectedHardeningChecklist: {
+          thpDisabled: false, sysctlTuned: false, limitsConfigured: false,
+          nonRootUserCreated: false, firewallConfigured: false, selinuxEnforced: false,
+          mtlsCertGenerated: false, auditdPolicy: false, disableUsbStorage: false
+        },
+        parallelTask: {
+          taskName: 'کشف واقعی شبکه',
+          taskStage: 'idle',
+          taskProgress: 100,
+          taskStatus: 'success',
+          taskLogs: [`[${new Date().toLocaleTimeString()}] [REAL_SCAN] ${n.ip} reachable; open ports: ${(n.openPorts || []).join(', ') || 'none'}`]
+        }
+      }));
+      setAssets(discovered);
+      if (discovered.length) setSelectedNodeId(discovered[0].id);
+      setScanDiscoveredCount(discovered.length);
+      setScanProgress(100);
+      setIsScanCompleted(true);
+    } catch (e: any) {
+      setScanProgress(0);
+      setIsScanCompleted(false);
+      setScanDiscoveredCount(0);
+      console.error(e);
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   // Helper to append log to node
@@ -276,77 +316,32 @@ export const SplunkFleetDiscoveryProvisioner: React.FC<SplunkFleetDiscoveryProvi
   };
 
   // 2. Stage 2: Parallel Security Hardening
-  const handleStartNodeHardening = (nodeId: string) => {
+  const handleStartNodeHardening = async (nodeId: string) => {
     const node = assets.find(n => n.id === nodeId);
     if (!node) return;
-
-    if (activeTimersRef.current[nodeId]) {
-      activeTimersRef.current[nodeId].forEach(clearTimeout);
+    setAssets(prev => prev.map(n => n.id === nodeId ? {
+      ...n, status: 'hardening_in_progress', lifecycleStage: 'hardening_in_progress',
+      parallelTask: { ...n.parallelTask!, taskName: 'اعمال هاردنینگ واقعی روی نود', taskStage: 'hardening', taskProgress: 20, taskStatus: 'running',
+        taskLogs: [...(n.parallelTask?.taskLogs || []), `[${new Date().toLocaleTimeString()}] [REAL_HARDENING] Connecting to ${node.ip} over SSH...`] }
+    } : n));
+    try {
+      const res = await fetch('/api/real/deploy/remote-hardening', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({host: node.ip, sshUser: node.sshUser || 'root', sshPort: node.sshPort || 22})
+      });
+      const data = await res.json();
+      if(!res.ok || !data.success || !data.verified) throw new Error(data.error || data.result?.stderr || 'Remote hardening failed');
+      setAssets(prev => prev.map(n => n.id === nodeId ? {
+        ...n, status:'hardened', lifecycleStage:'hardened',
+        hardeningReport:{ thpDisabled:true, sysctlTuned:true, limitsConfigured:true, nonRootUserCreated:false, firewallConfigured:true, selinuxEnforced:false, mtlsCertGenerated:false, auditdPolicy:false, disableUsbStorage:false },
+        parallelTask:{...n.parallelTask!,taskProgress:100,taskStatus:'success',taskLogs:[...(n.parallelTask?.taskLogs||[]), `[${new Date().toLocaleTimeString()}] [HARDENED] ${data.result.stdout || 'Remote baseline applied'}`]}
+      }:n));
+    } catch(e:any) {
+      setAssets(prev => prev.map(n => n.id === nodeId ? {...n,status:'pending_access',lifecycleStage:'discovered',parallelTask:{...n.parallelTask!,taskStatus:'failed',taskLogs:[...(n.parallelTask?.taskLogs||[]),`[${new Date().toLocaleTimeString()}] [FAILED] ${e.message}`]}}:n));
     }
-    activeTimersRef.current[nodeId] = [];
-
-    setAssets(prev => prev.map(n => {
-      if (n.id !== nodeId) return n;
-      return {
-        ...n,
-        status: 'hardening_in_progress',
-        lifecycleStage: 'hardening_in_progress',
-        parallelTask: {
-          taskName: 'اعمال هاردنینگ امنیتی CIS Level 2',
-          taskStage: 'hardening',
-          taskProgress: 15,
-          taskStatus: 'running',
-          taskLogs: [
-            ...(n.parallelTask?.taskLogs || []),
-            `[${new Date().toLocaleTimeString()}] [HARDENING_START] Initiating automated security hardening sequence...`,
-            `[${new Date().toLocaleTimeString()}] [THP] Disabling Transparent Huge Pages via tuned-adm profile & GRUB...`
-          ]
-        }
-      };
-    }));
-
-    const steps = [
-      { progress: 35, log: `[SYSCTL] Applying /etc/sysctl.d/99-splunk.conf (vm.max_map_count=262144, swappiness=1)...` },
-      { progress: 55, log: `[LIMITS] Enforcing ulimits (nofile=65535, nproc=20480) in /etc/security/limits.conf...` },
-      { progress: 75, log: `[USER_SEC] Creating non-root splunk user & disabling SSH root password login...` },
-      { progress: 90, log: `[PKI_mTLS] Generating 4096-bit RSA certificate and enforcing mTLS mesh...` },
-      { progress: 100, log: `[HARDENED] Security Hardening complete! CIS Benchmark Level 2 passed 100%.` }
-    ];
-
-    steps.forEach((step, idx) => {
-      const timer = setTimeout(() => {
-        setAssets(prev => prev.map(n => {
-          if (n.id !== nodeId) return n;
-          const isFinished = idx === steps.length - 1;
-          const updatedLogs = [...(n.parallelTask?.taskLogs || []), `[${new Date().toLocaleTimeString()}] ${step.log}`];
-          return {
-            ...n,
-            status: isFinished ? 'hardened' : 'hardening_in_progress',
-            lifecycleStage: isFinished ? 'hardened' : 'hardening_in_progress',
-            hardeningReport: isFinished ? {
-              thpDisabled: true,
-              sysctlTuned: true,
-              limitsConfigured: true,
-              nonRootUserCreated: true,
-              firewallConfigured: true,
-              selinuxEnforced: true,
-              mtlsCertGenerated: true,
-              auditdPolicy: true,
-              disableUsbStorage: false
-            } : n.hardeningReport,
-            parallelTask: {
-              ...n.parallelTask!,
-              taskProgress: step.progress,
-              taskStatus: isFinished ? 'success' : 'running',
-              taskLogs: updatedLogs
-            }
-          };
-        }));
-      }, (idx + 1) * 750);
-
-      activeTimersRef.current[nodeId].push(timer);
-    });
   };
+
+  // 3. Stage 3
 
   // 3. Stage 3: Container / Runtime Engine Installation
   const handleStartNodeContainerInstall = (nodeId: string, engine: DeploymentTargetEngine) => {

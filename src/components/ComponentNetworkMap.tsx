@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ComponentProfile, ClusterSettings } from '../types';
 import { ParsedLogInput } from '../utils/splunkConfigParser';
 import { 
@@ -31,43 +31,47 @@ export const ComponentNetworkMap: React.FC<ComponentNetworkMapProps> = ({
 }) => {
   const isFa = lang === 'fa';
 
-  const logSources = parsedInputs && parsedInputs.length > 0 ? parsedInputs : profile.incomingLogSources.map((s, i) => ({
-    id: `src-${i}`,
-    name: s.hostname,
-    hostname: s.hostname,
-    ip: s.ip,
-    targetServerIp: settings?.hfIp || '10.20.30.45',
-    port: s.port,
-    protocol: (s.port === 514 ? 'UDP' : s.port === 1514 ? 'TCP' : s.port === 8088 ? 'HEC/HTTPS' : 'SplunkTCP') as any,
-    sourcetype: s.targetSourcetype,
-    targetIndex: s.targetIndex,
-    eventsPerSec: s.eventsPerSec,
-    status: 'active' as const,
-    stanza: `[${s.port === 514 ? 'udp://514' : s.port === 1514 ? 'tcp://1514' : 'splunktcp://9997'}]`
-  }));
+  const [realTopology, setRealTopology] = useState<any>(null);
 
-  const destinationIndexers = [
-    {
-      hostname: settings?.idx1Host || 'idx01-site1.cluster.splunk',
-      ip: settings?.idx1Ip || '10.20.30.50',
-      port: 9997,
-      dutyFa: 'نود ایندکسر اول: دریافت رویدادها، ایندکس‌سازی در باکت‌های Hot و هندل کوئری‌های سرچ‌هد',
-      dutyEn: 'Indexer Peer 01: Event ingestion, tsidx generation, hot bucket indexing',
-      storedBucketsCount: 1420,
-      avgLatencyMs: 1.8,
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/real/splunk/topology')
+      .then(r => r.json())
+      .then(data => { if (!cancelled && data.success) setRealTopology(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const logSources = parsedInputs && parsedInputs.length > 0
+    ? parsedInputs
+    : (realTopology?.inputs || []).map((s:any, i:number) => ({
+        id: `real-input-${i}`,
+        name: `real-input-${s.port}`,
+        hostname: realTopology?.serverName || profile.shortName,
+        ip: settings?.hfIp || '127.0.0.1',
+        targetServerIp: settings?.hfIp || '127.0.0.1',
+        port: s.port,
+        protocol: String(s.protocol).toUpperCase(),
+        sourcetype: 'live-config',
+        targetIndex: 'from inputs.conf',
+        eventsPerSec: 0,
+        status: 'active' as const,
+        stanza: `[${s.protocol}://${s.port}]`
+      }));
+
+  const destinationIndexers = (realTopology?.outputs || []).map((value:string, i:number) => {
+    const m = value.match(/^(.+?):(\\d+)$/);
+    return {
+      hostname: m ? m[1] : value,
+      ip: m ? m[1] : value,
+      port: m ? Number(m[2]) : 9997,
+      dutyFa: 'مقصد واقعی outputs.conf',
+      dutyEn: 'Real destination from outputs.conf',
+      storedBucketsCount: 0,
+      avgLatencyMs: 0,
       tlsStatus: false
-    },
-    {
-      hostname: settings?.idx2Host || 'idx02-site1.cluster.splunk',
-      ip: settings?.idx2Ip || '10.20.30.51',
-      port: 9997,
-      dutyFa: 'نود ایندکسر دوم: دریافت رویدادها، ذخیره‌سازی، رپلیکیشن باکت‌های همتا (Port 9887)',
-      dutyEn: 'Indexer Peer 02: Event ingestion, replication peer on 9887',
-      storedBucketsCount: 1395,
-      avgLatencyMs: 2.1,
-      tlsStatus: false
-    }
-  ];
+    };
+  });
 
   return (
     <div className="space-y-6 text-start">
