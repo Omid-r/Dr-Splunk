@@ -13,12 +13,13 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Setup Node 22
-        uses: actions/setup-node@v4
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
+          package-manager-cache: false
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund --no-package-lock
@@ -109,7 +110,7 @@ jobs:
           ls -lh splunk-doctor-offline-rhel.tar.gz splunk-doctor-offline-rhel.tar.gz.sha256
 
       - name: Upload standalone bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: splunk-doctor-offline-rhel
           path: |
