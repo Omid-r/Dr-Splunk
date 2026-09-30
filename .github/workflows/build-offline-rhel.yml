@@ -19,10 +19,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install --no-audit --no-fund --no-package-lock
 
       - name: TypeScript check
         run: npm run lint
@@ -37,8 +36,7 @@ jobs:
           PKG="dist-offline/splunk-doctor"
           rm -rf dist-offline
           mkdir -p "$PKG/node-runtime"
-          tar -czf /tmp/node22.tar.gz -C /opt/hostedtoolcache/node/22.*/x64 .
-          # Copy only the Node runtime needed by the standalone server.
+          # Copy the Node runtime needed by the standalone server.
           NODE_BIN="$(command -v node)"
           mkdir -p "$PKG/node-runtime/bin"
           cp "$NODE_BIN" "$PKG/node-runtime/bin/node"
