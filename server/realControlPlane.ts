@@ -454,7 +454,10 @@ export function registerRealControlPlane(app: express.Express, deps: Registratio
     const kubectl=(fs.existsSync('/usr/local/bin/kubectl')?'/usr/local/bin/kubectl':'kubectl');
     const probe=await command(kubectl,['version','--client=true','--output=json'],{timeoutMs:10000});
     if(probe.code!==0) return fail(res,503,'kubectl is not available.');
-    const imageRef=String(req.body?.imageRef||'splunk/splunk:latest').replace(/[^a-zA-Z0-9._:/@-]/g,'');
+    const adminPassword=String(req.body?.adminPassword||'');
+    if(adminPassword.length<12) return fail(res,400,'A real admin password of at least 12 characters is required.');
+    const imageRef=String(req.body?.imageRef||'').replace(/[^a-zA-Z0-9._:/@-]/g,'');
+    if(!imageRef) return fail(res,400,'imageRef is required for offline Kubernetes deployment.');
     const namespace=String(req.body?.namespace||'splunk-managed').replace(/[^a-z0-9-]/g,'').slice(0,40)||'splunk-managed';
     const manifest=[
       'apiVersion: v1','kind: Namespace','metadata:','  name: '+namespace,'---',
