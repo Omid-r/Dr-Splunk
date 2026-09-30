@@ -39,7 +39,7 @@ async function startServer() {
       console.log(`\n\x1b[46m\x1b[30m\x1b[1m 🌐 [WEB BUTTON CLICK / API ACTION] \x1b[0m \x1b[93m${req.method}\x1b[0m \x1b[96m${req.path}\x1b[0m \x1b[2m(${timeNow})\x1b[0m`);
       if (req.body && Object.keys(req.body).length > 0) {
         try {
-          const bodyPreview = JSON.stringify(req.body);
+          const bodyPreview = JSON.stringify(req.body, (key, value) => /password|secret|token|privateKey|licenseKey/i.test(key) ? '[REDACTED]' : value);
           console.log(`   \x1b[2mParameters:\x1b[0m \x1b[97m${bodyPreview.length > 250 ? bodyPreview.slice(0, 250) + '...' : bodyPreview}\x1b[0m`);
         } catch (_) {}
       }
