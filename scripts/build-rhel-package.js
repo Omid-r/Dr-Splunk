@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
-const PACKAGE_VERSION = '1.3.0';
+const PACKAGE_VERSION = '1.4.0';
 const BUILD_DATE = new Date().toISOString();
 
 console.log(`[RHEL Packager] Building Splunk Cluster Doctor Standalone RHEL Package v${PACKAGE_VERSION}...`);
@@ -131,7 +131,7 @@ echo " Access UI in your browser at: http://$(hostname -I 2>/dev/null | awk '{pr
 echo " Press Ctrl+C to stop."
 echo "=========================================================="
 
-exec node dist/server.cjs
+exec "$NODE_BIN" dist/server.cjs
 `;
 fs.writeFileSync(path.join(stagingDir, 'start.sh'), startSh, { encoding: 'utf8', mode: 0o755 });
 
@@ -148,7 +148,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/splunk-doctor
-ExecStart=/usr/bin/node /opt/splunk-doctor/dist/server.cjs
+ExecStart=/opt/splunk-doctor/node-runtime/bin/node /opt/splunk-doctor/dist/server.cjs
 Restart=always
 RestartSec=5
 KillMode=process
