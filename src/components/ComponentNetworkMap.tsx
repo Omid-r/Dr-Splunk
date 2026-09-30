@@ -150,7 +150,7 @@ export const ComponentNetworkMap: React.FC<ComponentNetworkMapProps> = ({
             <span>
               {isFa 
                 ? `خروجی کلاستر: ارسال از ${settings?.hfIp || '10.20.30.45'} به ${destinationIndexers.length} ایندکسر (${destinationIndexers.map((d: any) => d.ip).join(' , ')})` 
-                : `Destination Cluster: Forwarding to ${destinationIndexers.length} indexer peers (${destinationIndexers.map(d => d.ip).join(', ')})`}
+                : `Destination Cluster: Forwarding to ${destinationIndexers.length} indexer peers (${destinationIndexers.map((d: any) => d.ip).join(', ')})`}
             </span>
           </div>
         </div>
