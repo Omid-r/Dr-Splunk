@@ -26,6 +26,12 @@ if (fs.existsSync(stagingDir)) {
 }
 fs.mkdirSync(stagingDir, { recursive: true });
 
+// 2b. Bundle the exact Linux Node runtime used for this build so the RHEL package is self-contained.
+const nodeRuntimeDir = path.join(stagingDir, 'node-runtime', 'bin');
+fs.mkdirSync(nodeRuntimeDir, { recursive: true });
+fs.copyFileSync(process.execPath, path.join(nodeRuntimeDir, 'node'));
+fs.chmodSync(path.join(nodeRuntimeDir, 'node'), 0o755);
+
 // 3. Copy compiled dist/ (excluding nested archives to keep package lightweight and fast)
 const distTarget = path.join(stagingDir, 'dist');
 fs.mkdirSync(distTarget, { recursive: true });
