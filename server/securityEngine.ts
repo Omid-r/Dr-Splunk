@@ -380,7 +380,7 @@ function seedInitialStore(): SecurityStore {
       username: 'SYSTEM',
       action: 'LICENSE_INITIAL_STATE',
       category: 'LICENSE',
-      status: 'INFO',
+      status: 'SUCCESS',
       ip: '127.0.0.1',
       details: `نصب اولیه بدون لایسنس تجاری فعال شد؛ سخت‌افزار ${hwId} برای بررسی لایسنس‌های واقعی ثبت شد.`
     }
