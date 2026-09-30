@@ -3948,7 +3948,7 @@ index = _thefishbucket
           await runCommand(`"${splunkBin}" restart`);
           logs.push(`[+] Service restarted successfully.`);
         } else {
-          logs.push(`[+] (Sandbox Mode): Local configuration files saved. Splunk binary not installed on this host.`);
+          logs.push(`[INFO] Local configuration was written, but no real Splunk binary is installed; runtime remediation was not completed.`);
         }
       } catch (err: any) {
         logs.push(`[-] ERROR: ${err.message}`);
@@ -4050,7 +4050,7 @@ disabled = 0
           await runCommand(`"${splunkBin}" restart`);
           logs.push(`[+] Indexer service restarted.`);
         } else {
-          logs.push(`[+] (Sandbox Mode): Local configuration files saved.`);
+          logs.push(`[INFO] Local configuration was written, but no real Splunk binary is installed; runtime remediation was not completed.`);
         }
       } catch (err: any) {
         logs.push(`[-] ERROR: ${err.message}`);
@@ -4190,35 +4190,12 @@ disabled = 0
     }
   });
 
-  // API: Re-create / Re-build Virtual Cloud Server
-  app.post('/api/virtual-server/recreate', async (req, res) => {
-    const logs: string[] = [];
-    logs.push(`[${new Date().toLocaleTimeString()}] [INIT] Initializing fresh Virtual Server (VPS) environment...`);
-    try {
-      const vDir = '/opt/splunk_virtual';
-      if (!fs.existsSync(vDir)) {
-        fs.mkdirSync(vDir, { recursive: true });
-      }
-      fs.mkdirSync(path.join(vDir, 'etc/system/local'), { recursive: true });
-      fs.mkdirSync(path.join(vDir, 'var/lib/splunk'), { recursive: true });
-
-      const webConf = `[settings]\nhttpport = 8080\nserver.socket_host = 0.0.0.0\nenableSplunkWebSSL = false\nstartwebserver = 1\nmgmtHostPort = 127.0.0.1:8091\n`;
-      const serverConf = `[general]\nserverName = splunk-virtual-cloud\nmgmtHostPort = 127.0.0.1:8091\nactive_group = Free\n\n[kvstore]\nport = 8194\n`;
-      fs.writeFileSync(path.join(vDir, 'etc/system/local/web.conf'), webConf, 'utf8');
-      fs.writeFileSync(path.join(vDir, 'etc/system/local/server.conf'), serverConf, 'utf8');
-
-      logs.push(`[${new Date().toLocaleTimeString()}] [CONFIG] Virtual configuration files created for ports 8080 (Web), 8091 (Mgmt), 9999 (Ingest).`);
-      logs.push(`[${new Date().toLocaleTimeString()}] [READY] Virtual Server (VPS) container initialized.`);
-
-      res.json({
-        success: true,
-        messageFa: 'سرور مجازی جدید با موفقیت ایجاد و آماده‌سازی شد.',
-        messageEn: 'Fresh virtual server initialized successfully.',
-        logs
-      });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message, logs });
-    }
+  // Synthetic virtual-server recreation is disabled.
+  app.post('/api/virtual-server/recreate', async (_req, res) => {
+    return res.status(501).json({
+      success: false,
+      error: 'Virtual server recreation requires a real Splunk package/image and a real provisioning runtime. No synthetic server is created.'
+    });
   });
 
   // =========================================================================
