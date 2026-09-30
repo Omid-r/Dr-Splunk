@@ -1781,14 +1781,9 @@ async function startServer() {
     const binaryPath = path.join(splunkHome, 'bin/splunk');
 
     if (!fs.existsSync(binaryPath)) {
-      // Simulate action in sandbox mode
-      return res.json({
-        success: true,
-        sandboxed: true,
-        targetDir: splunkHome,
-        stdout: `[SANDBOX] Executed Splunk ${action} command on ${splunkHome} successfully.`,
-        stderr: '',
-        message: `Splunk binary is not installed at ${binaryPath}, simulated execution of '${action}' completed.`
+      return res.status(404).json({
+        success:false, sandboxed:false, targetDir:splunkHome,
+        stdout:'', stderr:'', message:`Splunk binary is not installed at ${binaryPath}.`
       });
     }
 
