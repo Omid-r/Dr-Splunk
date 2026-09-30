@@ -1,3 +1,4 @@
+import { registerRealControlPlane } from './server/realControlPlane';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -4778,6 +4779,9 @@ disabled = 0
       res.status(500).json({ error: err.message });
     }
   });
+
+  // Real offline control plane: wire the existing UI to verified host/network/Splunk operations.
+  registerRealControlPlane(app, { requireAuth });
 
   // Vite integration middleware
   if (process.env.NODE_ENV !== 'production') {
