@@ -347,13 +347,17 @@ export function registerRealControlPlane(app: express.Express, deps: Registratio
         if(r.code!==0) throw new Error('sysctl --system failed');
       }
       if (selected.has('firewall-3000')) {
-        const r=await command('firewall-cmd',['--permanent','--add-port=3000/tcp'],{timeoutMs:8000});
-        logs.push(r.stdout+r.stderr);
-        if(r.code===0){ const rr=await command('firewall-cmd',['--reload'],{timeoutMs:8000}); logs.push(rr.stdout+rr.stderr); }
+        const firewall = await command('firewall-cmd',['--permanent','--add-port=3000/tcp'],{timeoutMs:8000});
+        logs.push(firewall.stdout+firewall.stderr);
+        if (firewall.code !== 0) throw new Error('firewall-cmd failed: ' + (firewall.stderr || firewall.stdout));
+        const reload = await command('firewall-cmd',['--reload'],{timeoutMs:8000});
+        logs.push(reload.stdout+reload.stderr);
+        if (reload.code !== 0) throw new Error('firewall-cmd reload failed: ' + (reload.stderr || reload.stdout));
       }
       if (selected.has('chrony')) {
-        const r=await command('systemctl',['enable','--now','chronyd'],{timeoutMs:12000});
-        logs.push(r.stdout+r.stderr);
+        const chrony = await command('systemctl',['enable','--now','chronyd'],{timeoutMs:12000});
+        logs.push(chrony.stdout+chrony.stderr);
+        if (chrony.code !== 0) throw new Error('chronyd enable/start failed: ' + (chrony.stderr || chrony.stdout));
       }
       ok(res,{controls:[...selected],backupRoot,logs,verified:healthFindings()});
     } catch(e:any){ fail(res,500,e.message,{backupRoot,logs}); }
@@ -379,7 +383,12 @@ export function registerRealControlPlane(app: express.Express, deps: Registratio
     if(!home) return fail(res,404,'Splunk binary not found on the target host.');
     const r=await command(path.join(home,'bin','splunk'),[action],{timeoutMs:30000,cwd:home});
     const verified=await command(path.join(home,'bin','splunk'),['status'],{timeoutMs:10000,cwd:home});
-    ok(res,{action,exitCode:r.code,stdout:r.stdout,stderr:r.stderr,verified:verified.stdout||verified.stderr});
+    const statusText=(verified.stdout||verified.stderr||'').toString();
+    const running=/splunkd is running|splunkweb is running/i.test(statusText);
+    const stopped=/splunkd is not running|splunkweb is not running/i.test(statusText);
+    const stateMatches=action==='stop'?stopped:running;
+    const success=r.code===0 && verified.code===0 && stateMatches;
+    res.status(success?200:500).json({success,action,exitCode:r.code,stdout:r.stdout,stderr:r.stderr,verified:statusText,verification:{code:verified.code,running,stopped}});
   });
 
   app.post('/api/real/deploy/direct', auth, async (req,res) => {
@@ -391,17 +400,33 @@ export function registerRealControlPlane(app: express.Express, deps: Registratio
     const logs:string[]=['Using artifact: '+artifact];
     try{
       const osr=readOsRelease();
-      const isRpm=/rhel|rocky|almalinux|centos/i.test(osr.ID||'');
-      const r=await command(isRpm?'dnf':'rpm',isRpm?['-y','install',artifact]:['-Uvh',artifact],{timeoutMs:180000});
-      logs.push(r.stdout,r.stderr);
-      if(r.code!==0) throw new Error('Local Splunk package installation failed');
-      const home=findSplunkHome();
-      if(!home) throw new Error('Install completed but Splunk binary was not detected');
+      let home:string|undefined;
+      if (/\.rpm$/i.test(artifact)) {
+        const isRpm=/rhel|rocky|almalinux|centos/i.test(osr.ID||'');
+        if (!isRpm) throw new Error('RPM deployment requires a RHEL-compatible host.');
+        const r=await command('dnf',['--disablerepo=*','-y','install',artifact],{timeoutMs:180000});
+        logs.push(r.stdout,r.stderr);
+        if(r.code!==0) throw new Error('Local Splunk RPM installation failed');
+        const detected=findSplunkHome();
+        home=detected.detected?detected.path:undefined;
+      } else {
+        const target='/opt/splunk';
+        fs.mkdirSync(target,{recursive:true});
+        const r=await command('tar',['-xzf',artifact,'-C','/opt'],{timeoutMs:180000});
+        logs.push(r.stdout,r.stderr);
+        if(r.code!==0) throw new Error('Local Splunk archive extraction failed');
+        home=fs.existsSync(path.join(target,'bin','splunk'))?target:findSplunkHome().path;
+      }
+      if(!home || !fs.existsSync(path.join(home,'bin','splunk'))) throw new Error('Installation completed but Splunk binary was not detected');
       const boot=await command(path.join(home,'bin','splunk'),['enable','boot-start','-systemd-managed','1','-user','splunk'],{timeoutMs:30000,cwd:home});
       logs.push(boot.stdout,boot.stderr);
+      if(boot.code!==0) throw new Error('Splunk boot-start configuration failed');
       const start=await command(path.join(home,'bin','splunk'),['start','--accept-license','--answer-yes','--no-prompt'],{timeoutMs:180000,cwd:home});
       logs.push(start.stdout,start.stderr);
       if(start.code!==0) throw new Error('Splunk start failed after package installation');
+      const status=await command(path.join(home,'bin','splunk'),['status'],{timeoutMs:15000,cwd:home});
+      logs.push(status.stdout,status.stderr);
+      if(status.code!==0 || !/splunkd is running|splunkweb is running/i.test((status.stdout||status.stderr||'').toString())) throw new Error('Splunk installation finished but runtime verification failed');
       ok(res,{artifact,home,logs});
     }catch(e:any){fail(res,500,e.message,logs);}
   });
@@ -438,7 +463,7 @@ export function registerRealControlPlane(app: express.Express, deps: Registratio
       '    metadata:','      labels: { app: splunk }','    spec:','      containers:',
       '      - name: splunk','        image: '+imageRef,'        imagePullPolicy: IfNotPresent',
       '        env:','        - name: SPLUNK_START_ARGS','          value: "--accept-license --answer-yes --no-prompt"',
-      '        - name: SPLUNK_PASSWORD','          value: "'+String(req.body?.adminPassword||'').replace(/"/g,'')+'"',
+      '        - name: SPLUNK_PASSWORD','          value: "'+adminPassword.replace(/"/g,'')+'"',
       '        ports:','        - { containerPort: 8000 }','        - { containerPort: 8089 }','        - { containerPort: 9997 }','        - { containerPort: 8088 }',
       '---','apiVersion: v1','kind: Service','metadata:','  name: splunk-web','  namespace: '+namespace,
       'spec:','  type: NodePort','  selector:','    app: splunk','  ports:',
@@ -448,11 +473,14 @@ export function registerRealControlPlane(app: express.Express, deps: Registratio
     const workdir='/var/lib/splunk-doctor/k8s';
     fs.mkdirSync(workdir,{recursive:true});
     const file=path.join(workdir,'splunk-managed.yaml');
-    fs.writeFileSync(file,manifest);
+    fs.writeFileSync(file,manifest,{mode:0o600});
     const applied=await command(kubectl,['apply','-f',file],{timeoutMs:60000});
+    try { fs.unlinkSync(file); } catch {}
     if(applied.code!==0) return fail(res,500,'Kubernetes manifest apply failed',applied);
     const rollout=await command(kubectl,['-n',namespace,'rollout','status','deployment/splunk','--timeout=180s'],{timeoutMs:190000});
-    ok(res,{namespace,manifestPath:file,image:imageRef,apply:applied,rollout});
+    const success=rollout.code===0;
+    if(!success) return fail(res,500,'Kubernetes deployment rollout failed', {apply:applied, rollout});
+    ok(res,{namespace,image:imageRef,apply:applied,rollout});
   });
 
   app.post('/api/real/deploy/remote-hardening', auth, async (req,res) => {
@@ -462,7 +490,8 @@ export function registerRealControlPlane(app: express.Express, deps: Registratio
     const sshPort=Number(req.body?.sshPort||22);
     if(!host || !Number.isInteger(sshPort) || sshPort<1 || sshPort>65535) return fail(res,400,'host and sshPort are required');
     const r=await remoteExec(host,user,sshPort,REMOTE_HARDEN_SCRIPT);
-    ok(res,{host,user,sshPort,result:r,verified:r.code===0});
+    const success=r.code===0;
+    res.status(success?200:502).json({success,host,user,sshPort,result:r,verified:success});
   });
 
   app.post('/api/real/design', auth, (req,res) => {
