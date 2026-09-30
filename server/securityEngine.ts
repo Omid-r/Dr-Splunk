@@ -8,6 +8,7 @@ import { UserAccount, UserRole, UserPermissions, getDefaultPermissionsForRole, A
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'security-db.json');
 const SECRET_KEY_PATH = path.join(DATA_DIR, 'master-signing.key');
+const BOOTSTRAP_PASSWORD_PATH = '/var/lib/splunk-doctor/bootstrap-admin-password';
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -265,11 +266,36 @@ function seedInitialStore(): SecurityStore {
   const in14Days = new Date(now);
   in14Days.setDate(now.getDate() + 14);
 
-  // Default Users with cryptographically salted PBKDF2 hashes
-  const adminPass = hashPassword('Splunk@Doctor2026!');
-  const engineerPass = hashPassword('Splunk@Engineer2026!');
-  const operatorPass = hashPassword('Splunk@Operator2026!');
-  const auditorPass = hashPassword('Splunk@Auditor2026!');
+  // Default users are created only on a fresh store. Never ship a fixed production password.
+  function getInitialAdminPassword(): string {
+    const envPassword = String(process.env.SPLUNK_DOCTOR_BOOTSTRAP_PASSWORD || '').trim();
+    if (envPassword.length >= 12) {
+      try {
+        fs.mkdirSync(path.dirname(BOOTSTRAP_PASSWORD_PATH), { recursive: true });
+        fs.writeFileSync(BOOTSTRAP_PASSWORD_PATH, envPassword + '\\n', { mode: 0o600 });
+      } catch (_) {}
+      return envPassword;
+    }
+
+    try {
+      if (fs.existsSync(BOOTSTRAP_PASSWORD_PATH)) {
+        const stored = fs.readFileSync(BOOTSTRAP_PASSWORD_PATH, 'utf8').trim();
+        if (stored.length >= 12) return stored;
+      }
+    } catch (_) {}
+
+    const generated = crypto.randomBytes(24).toString('base64url');
+    try {
+      fs.mkdirSync(path.dirname(BOOTSTRAP_PASSWORD_PATH), { recursive: true });
+      fs.writeFileSync(BOOTSTRAP_PASSWORD_PATH, generated + '\\n', { mode: 0o600 });
+    } catch (_) {}
+    return generated;
+  }
+
+  const adminPass = hashPassword(getInitialAdminPassword());
+  const engineerPass = hashPassword(getInitialAdminPassword() + '-engineer');
+  const operatorPass = hashPassword(getInitialAdminPassword() + '-operator');
+  const auditorPass = hashPassword(getInitialAdminPassword() + '-auditor');
 
   const users: InternalUserAccount[] = [
     {
