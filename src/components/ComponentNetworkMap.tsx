@@ -149,7 +149,7 @@ export const ComponentNetworkMap: React.FC<ComponentNetworkMapProps> = ({
             <ArrowRight className="w-4 h-4" />
             <span>
               {isFa 
-                ? `خروجی کلاستر: ارسال از ${settings?.hfIp || '10.20.30.45'} به ${destinationIndexers.length} ایندکسر (${destinationIndexers.map(d => d.ip).join(' , ')})` 
+                ? `خروجی کلاستر: ارسال از ${settings?.hfIp || '10.20.30.45'} به ${destinationIndexers.length} ایندکسر (${destinationIndexers.map((d: any) => d.ip).join(' , ')})` 
                 : `Destination Cluster: Forwarding to ${destinationIndexers.length} indexer peers (${destinationIndexers.map(d => d.ip).join(', ')})`}
             </span>
           </div>
@@ -186,7 +186,7 @@ export const ComponentNetworkMap: React.FC<ComponentNetworkMapProps> = ({
               </tr>
             </thead>
             <tbody>
-              {logSources.map((src, i) => (
+              {logSources.map((src: any, i: number) => (
                 <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition">
                   <td className="p-3.5 font-bold text-violet-400">{src.ip}</td>
                   <td className="p-3.5">
@@ -242,7 +242,7 @@ export const ComponentNetworkMap: React.FC<ComponentNetworkMapProps> = ({
               </tr>
             </thead>
             <tbody>
-              {destinationIndexers.map((idxr, i) => (
+              {destinationIndexers.map((idxr: any, i: number) => (
                 <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition">
                   <td className="p-3.5 font-bold text-violet-300">{idxr.hostname}</td>
                   <td className="p-3.5 text-slate-200">{idxr.ip}:{idxr.port}</td>
