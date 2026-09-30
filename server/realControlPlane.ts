@@ -492,6 +492,21 @@ export function registerRealControlPlane(app: express.Express, deps: Registratio
     }});
   });
 
+  app.get('/api/real/splunk/topology', auth, async (_req,res) => {
+    const home=findSplunkHome();
+    if(!home) return fail(res,404,'Splunk binary not found.');
+    const local=path.join(home,'etc/system/local');
+    const read=(name:string)=>fs.existsSync(path.join(local,name))?fs.readFileSync(path.join(local,name),'utf8'):'';
+    const inputs=read('inputs.conf');
+    const outputs=read('outputs.conf');
+    const parseServers=(text:string)=> {
+      const m=text.match(/^server\\s*=\\s*([^\\r\\n#]+)/im);
+      return m?m[1].split(',').map(s=>s.trim()).filter(Boolean):[];
+    };
+    const listeners=[...inputs.matchAll(/\\[(splunktcp|tcp|udp):\\/\\/(\\d+)\\]/gi)].map(m=>({protocol:m[1],port:Number(m[2])}));
+    ok(res,{splunkHome:home,serverName:(read('server.conf').match(/^serverName\\s*=\\s*([^\\r\\n#]+)/im)||[])[1]?.trim()||os.hostname(),inputs:listeners,outputs:parseServers(outputs),checkedAt:new Date().toISOString()});
+  });
+
   app.post('/api/real/overseer/step', auth, async (req,res) => {
     const step=String(req.body?.step||'');
     const outputs:any={step,startedAt:new Date().toISOString(),logs:[]};
