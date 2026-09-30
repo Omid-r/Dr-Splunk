@@ -102,6 +102,24 @@ try {
     ['POST', '/api/tools/validate-all', {}]
   ];
 
+
+  const allToolIds = [
+    'architect_overseer','autonomous_agent','ai_diagnostics','bento_overview',
+    'cluster_deployer','architecture_auditor','topology','management_nodes',
+    'commercial_license','docker_k8s','health_audit','live_logs','config_editor',
+    'doc_reference','heartbeat_radar','alert_manager','network_sources',
+    'component_agents','remote_gateway','package_center','backup_archive',
+    'network_toolbox','admin_security'
+  ];
+
+  for (const toolId of allToolIds) {
+    r = await request('/api/tools/validate', { method: 'POST', headers: auth }, { toolId });
+    assert(r.status === 200, `tool validation failed for ${toolId}: HTTP ${r.status} ${r.text}`);
+    assert(r.json?.toolId === toolId, `tool validation returned wrong toolId for ${toolId}`);
+    assert(r.json?.status === 'healthy' || r.json?.status === 'warning',
+      `tool validation returned invalid status for ${toolId}: ${r.text}`);
+  }
+
   for (const [method, path, body] of checks) {
     r = await request(path, { method, headers: auth }, body);
     assert(r.status === 200, `${method} ${path} failed: HTTP ${r.status} ${r.text.slice(0, 1000)}`);
