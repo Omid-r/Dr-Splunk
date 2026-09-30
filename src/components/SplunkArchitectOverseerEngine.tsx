@@ -153,108 +153,43 @@ export function SplunkArchitectOverseerEngine({
     }
   ];
 
-  const handleRunSingleStep = (stepIdx: number) => {
+  const handleRunSingleStep = async (stepIdx: number) => {
     setActiveStepIndex(stepIdx);
-    const newStatuses = [...stepStatuses];
-    newStatuses[stepIdx] = 'running';
-    setStepStatuses(newStatuses);
-
-    const timeStart = Date.now();
-    setTimeout(() => {
-      if (stepIdx === 0) {
-        // Step 1: Environment & Cache Purge
-        onPurgeDecommissionedServers();
-        onRescanAudit(true);
-        onLogBackendOperation(
-          'overseer_engine',
-          'ناظر ارشد - پاکسازی کش سرورها',
-          'Overseer Engine - Environment Audit',
-          'ارزیابی سرورهای موازی و مجازی ازدست‌رفته و پاکسازی کشو',
-          'Audited stale parallel/virtual servers and cleared selector cache',
-          'success',
-          'محیط‌های فعال تایید شدند و کشو روی سرور اصلی همگام گردید.',
-          'Active environments verified; cache synced to Production.',
-          `Purged stale entries | Active Env: ${activeEnvironment}`,
-          Date.now() - timeStart
-        );
-      } else if (stepIdx === 1) {
-        // Step 2: Architecture Sizing
-        onLogBackendOperation(
-          'overseer_engine',
-          'ناظر ارشد - ممیزی معماری SVA',
-          'Overseer Engine - SVA Architecture Audit',
-          'ممیزی ساختار کلاستر و تعداد ایندکسرها نسبت به حجم لاگ ورودی',
-          'Audited Indexer cluster sizing and SVA compliance',
-          'success',
-          'ساختار کلاستر با استاندارد SVA-C11 مطابقت داده شد.',
-          'Cluster verified compliant with SVA-C11 standard.',
-          'Checked: Indexer Peers (2), Search Head (1), Heavy Forwarder (1)',
-          Date.now() - timeStart
-        );
-      } else if (stepIdx === 2) {
-        // Step 3: Stanza Auto-Healing
-        onApplyAllRemediations();
-        onLogBackendOperation(
-          'overseer_engine',
-          'ناظر ارشد - اصلاح خودکار کانفیگ‌ها',
-          'Overseer Engine - Stanza Auto-Fix',
-          'اعمال مستقیم پچ‌های اصلاحی روی outputs.conf و server.conf',
-          'Applied auto-fix patches across outputs.conf and server.conf',
-          'success',
-          'تمام ایرادات تستی و تداخل‌های کانفیگی روی دیسک برطرف شدند.',
-          'All test findings and config collisions repaired on disk.',
-          'Patched: sslVerifyServerCert, pass4SymmKey, minFreeSpaceMB, sslVersionsToSupport',
-          Date.now() - timeStart
-        );
-      } else if (stepIdx === 3) {
-        // Step 4: Ingestion Radar
-        onLogBackendOperation(
-          'overseer_engine',
-          'ناظر ارشد - تست سوکت‌ها و رادار',
-          'Overseer Engine - Radar & Socket Audit',
-          'پایش بلادرنگ سوکت‌های TCP پورت‌های ۹۹۹۷، ۸۰۸۹ و ۸۰۰۰',
-          'Probed real-time TCP sockets for ports 9997, 8089, 8000',
-          'success',
-          'سوکت‌های ورودی لاگ لینوکس فعال و بدون تاخیر تایید شدند.',
-          'Linux ingestion sockets confirmed active with zero packet queue drop.',
-          'Sockets: TCP 9997 (Active), TCP 8089 (Active), TCP 8000 (Active)',
-          Date.now() - timeStart
-        );
-      } else if (stepIdx === 4) {
-        // Step 5: Security & PKI
-        onLogBackendOperation(
-          'overseer_engine',
-          'ناظر ارشد - ممیزی PKI و لایسنس',
-          'Overseer Engine - PKI & License Audit',
-          'تست گواهی mTLS و اعتبار سنجی لایسنس دیجیتال تجاری',
-          'Audited mTLS certificate validity and commercial license payload',
-          'success',
-          'گواهینامه امنیتی RSA-4096 معتبر است و ۳۶۵ روز اعتبار دارد.',
-          'Security certificate RSA-4096 validated with 365 days remaining.',
-          'Issuer: Corp SOC Authority | Algorithm: RSA-4096/SHA-256',
-          Date.now() - timeStart
-        );
-      } else if (stepIdx === 5) {
-        // Step 6: Final Verification & Disk Sync
-        onRescanAudit(true);
-        onLogBackendOperation(
-          'overseer_engine',
-          'ناظر ارشد - ذخیره نهایی و صدور شناسنامه',
-          'Overseer Engine - Master Disk Sync & Sign-off',
-          'همگام‌سازی کامل فایل‌های کانفیگ با دیسک و ثبت شناسنامه سلامت ۱۰۰٪',
-          'Synced all edited configs to host disk and issued 100% Health Pass',
-          'success',
-          'عملیات نظارت و اصلاح کامل سامانه توسط مدیر معمار با موفقیت پایان یافت.',
-          'System supervision and auto-repair complete. System health score: 100/100.',
-          'Disk location: /opt/splunk/etc/system/local/ | Score: 100/100',
-          Date.now() - timeStart
-        );
-      }
-
-      const finalStatuses = [...stepStatuses];
-      finalStatuses[stepIdx] = 'success';
-      setStepStatuses(finalStatuses);
-    }, 1000);
+    setStepStatuses(prev => { const n=[...prev]; n[stepIdx]='running'; return n; });
+    const stepMap = ['environment','architecture','stanza','ingestion','security','final'];
+    const step = stepMap[stepIdx];
+    const started = Date.now();
+    setOverseerLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] REAL execution started: ${step}`]);
+    try {
+      const res = await fetch('/api/real/overseer/step', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ step })
+      });
+      const data = await res.json();
+      if(!res.ok || !data.success) throw new Error(data.error || `Overseer step ${step} failed`);
+      setOverseerLogs(prev => [...prev, ...(data.logs || []), `[${new Date().toLocaleTimeString()}] REAL verification completed.`]);
+      onLogBackendOperation(
+        'overseer_engine',
+        'ناظر ارشد - اجرای واقعی',
+        'Overseer Engine - Real Execution',
+        `اجرای واقعی مرحله ${step}`,
+        `Real execution of overseer step ${step}`,
+        'success',
+        'Backend execution and verification completed.',
+        'Backend execution and verification completed.',
+        JSON.stringify(data).slice(0, 4000),
+        Date.now()-started
+      );
+      setStepStatuses(prev => { const n=[...prev]; n[stepIdx]='success'; return n; });
+    } catch(e:any) {
+      setOverseerLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] FAILED: ${e.message}`]);
+      onLogBackendOperation(
+        'overseer_engine','ناظر ارشد - خطا','Overseer Engine - Failure',
+        `خطا در مرحله ${step}`,`Failure in overseer step ${step}`,'failed',
+        e.message,e.message,e.stack || '',Date.now()-started
+      );
+      setStepStatuses(prev => { const n=[...prev]; n[stepIdx]='failed'; return n; });
+    }
   };
 
   const handleRunAllStepsFlow = () => {
