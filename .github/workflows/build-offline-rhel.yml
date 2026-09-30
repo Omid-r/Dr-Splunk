@@ -61,6 +61,8 @@ jobs:
           test -f dist/index.html
           test -f dist/server.cjs
 
+          # Never ship runtime-generated credentials/state from CI or the developer workspace.
+          rm -f data/security-db.json data/master-signing.key
           cp -a dist "$PKG/"
           cp -a scripts "$PKG/"
           cp -a public "$PKG/" 2>/dev/null || true
