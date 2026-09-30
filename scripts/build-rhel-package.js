@@ -83,16 +83,19 @@ echo "=========================================================="
 echo " Starting Splunk Cluster Doctor (RHEL Standalone v${PACKAGE_VERSION})"
 echo "=========================================================="
 
-# Check Node.js
-if ! command -v node >/dev/null 2>&1; then
-    echo "[-] Node.js is not installed."
-    echo "[!] Run: sudo dnf install -y nodejs   (RHEL 8/9, Rocky, AlmaLinux)"
-    echo "[!] Or:  sudo yum install -y nodejs   (RHEL 7 / CentOS 7)"
+# Prefer the bundled Node.js runtime shipped inside the offline package.
+if [ -x "$DIR/node-runtime/bin/node" ]; then
+    NODE_BIN="$DIR/node-runtime/bin/node"
+else
+    NODE_BIN="$(command -v node 2>/dev/null || true)"
+fi
+if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then
+    echo "[-] No Node.js runtime found in the offline bundle or system PATH."
     exit 1
 fi
 
-NODE_VER=$(node -v)
-echo "[+] Detected Node.js: $NODE_VER"
+NODE_VER=$("$NODE_BIN" -v)
+echo "[+] Detected Node.js runtime: $NODE_BIN ($NODE_VER)"
 
 # Auto-detect Splunk Home if not set
 if [ -z "$SPLUNK_HOME" ]; then
@@ -185,27 +188,16 @@ cp -r ./* "$TARGET_DIR/"
 chmod -R 755 "$TARGET_DIR"
 chmod +x "$TARGET_DIR"/*.sh "$TARGET_DIR"/scripts/*.sh 2>/dev/null || true
 
-# Dynamic Node.js path discovery
-NODE_PATH="$(command -v node 2>/dev/null || echo "/usr/bin/node")"
-sed -i "s|ExecStart=.*|ExecStart=\${NODE_PATH} /opt/splunk-doctor/dist/server.cjs|g" "$TARGET_DIR/systemd/splunk-doctor.service" 2>/dev/null || true
-
-echo "[+] Installing systemd service: /etc/systemd/system/splunk-doctor.service"
-cp "$TARGET_DIR/systemd/splunk-doctor.service" /etc/systemd/system/splunk-doctor.service
-
-systemctl daemon-reload
-systemctl enable splunk-doctor.service
-systemctl restart splunk-doctor.service
-
-# Open firewall port if firewalld is active
-if systemctl is-active --quiet firewalld; then
-  echo "[+] Configuring firewalld for ports 3000, 8001, 8090, 9998/tcp..."
-  firewall-cmd --permanent --add-port=3000/tcp 2>/dev/null || true
-  firewall-cmd --permanent --add-port=8001/tcp 2>/dev/null || true
-  firewall-cmd --permanent --add-port=8090/tcp 2>/dev/null || true
-  firewall-cmd --permanent --add-port=9998/tcp 2>/dev/null || true
-  firewall-cmd --permanent --add-port=8193/tcp 2>/dev/null || true
-  firewall-cmd --reload || true
+# Prefer the bundled Node.js runtime for the systemd service.
+NODE_PATH="/opt/splunk-doctor/node-runtime/bin/node"
+if [ ! -x "$NODE_PATH" ]; then
+  NODE_PATH="$(command -v node 2>/dev/null || true)"
 fi
+if [ -z "$NODE_PATH" ]; then
+  echo "[-] Node.js runtime is missing."
+  exit 1
+fi
+sed -i "s|ExecStart=.*|ExecStart=\${NODE_PATH} /opt/splunk-doctor/dist/server.cjs|g" "$TARGET_DIR/systemd/splunk-doctor.service"
 
 echo ""
 echo "===================================================================="
