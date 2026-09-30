@@ -1608,15 +1608,14 @@ async function startServer() {
     const binaryPath = path.join(splunkHome, 'bin/splunk');
 
     if (!fs.existsSync(binaryPath)) {
-      // Fallback/Simulated mode if running outside RedHat or Splunk is not installed yet
-      return res.json({
+      return res.status(404).json({
         installed: false,
-        status: 'splunkd is not running (Simulated Service Mode)',
+        status: 'not-installed',
         running: false,
         processId: null,
         mode: 'standalone',
         targetDir: splunkHome,
-        details: `Splunk binaries not detected at ${binaryPath}. Displaying diagnostic sandbox mode.`
+        details: `Splunk binary not detected at ${binaryPath}.`
       });
     }
 
@@ -1685,17 +1684,7 @@ async function startServer() {
     const binaryPath = path.join(splunkHome, 'bin/splunk');
 
     if (!fs.existsSync(binaryPath)) {
-      // Return beautiful mock btool data in sandbox mode
-      return res.json({
-        success: true,
-        sandboxed: true,
-        targetDir: splunkHome,
-        errors: [
-          { file: 'etc/system/local/outputs.conf', stanza: 'tcpout:primary', parameter: 'useSSL', message: 'Insecure cleartext forwarding flag outputs.conf:useSSL=false is active.' },
-          { file: 'etc/system/local/server.conf', stanza: 'general', parameter: 'pass4SymmKey', message: 'Weak or default pass4SymmKey = "changeme" detected in cluster server.conf' },
-          { file: 'etc/system/local/inputs.conf', stanza: 'splunktcp://9997', parameter: 'connection_host', message: 'Port 9997 does not enforce TLS certificate matching.' }
-        ]
-      });
+      return res.status(404).json({ success:false, sandboxed:false, targetDir:splunkHome, errors:[], error:'Splunk binary not found.' });
     }
 
     try {
