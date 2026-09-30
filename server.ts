@@ -2483,6 +2483,9 @@ PASSWORD = ${password}
       } else {
         log.push('[INFO] firewalld is not installed; firewall was not changed.');
       }
+    } catch (e: any) {
+      throw new Error('Firewall configuration failed: ' + e.message);
+    }
 
     // 4. Writing non-colliding base configuration files
     log.push(`[4/6] Generating isolated configuration stanzas...`);
@@ -3038,7 +3041,7 @@ PASSWORD = ${password}
       // 3. Write clean, collision-free configuration files
       logs.push(`==> 3. Generating synchronized configuration stanzas (KVStore=${kvPort}, REST=${restPort})...`);
       const webConf = `[settings]\nhttpport = ${webPort}\nserver.socket_host = 0.0.0.0\nenableSplunkWebSSL = false\nstartwebserver = 1\nappServerPorts = 8066\nmgmtHostPort = 127.0.0.1:${restPort}\n`;
-pass4SymmKey = ${pass4SymmKey}
+      const serverConf = `[general]\nserverName = splunk-parallel-staging-01\nmgmtHostPort = 127.0.0.1:${restPort}\npass4SymmKey = ${pass4SymmKey}\nactive_group = Enterprise\n\n[sslConfig]\nmgmtHostPort = 127.0.0.1:${restPort}\n\n[kvstore]\nport = ${kvPort}\n`;
       const inputsConf = `[default]\nhost = splunk-parallel-staging-01\n\n[splunktcp://${tcpPort}]\ndisabled = 0\nqueueSize = 10MB\n`;
       const userSeedConf = `[user_info]\nUSERNAME = admin\nPASSWORD = ${adminPassword}\n`;
       const uiTourConf = `[splunk_enterprise]\nviewed = 1\n`;
