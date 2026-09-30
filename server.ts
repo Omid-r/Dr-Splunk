@@ -2408,11 +2408,22 @@ PASSWORD = ${password}
       licenseFileContent,
       licenseFileName,
       licenseMasterUri,
+      adminPassword,
+      pass4SymmKey,
       ports = { web: 8001, rest: 8090, splunkTcp: 9998, kvstore: 8192, hec: 8088 }
     } = req.body;
 
     if (typeof process.getuid === 'function' && process.getuid() !== 0) {
       return res.status(403).json({ success: false, error: 'Parallel Splunk installation requires root privileges.' });
+    }
+    if (typeof process.getuid === 'function' && process.getuid() !== 0) {
+      return res.status(403).json({ success: false, error: 'Parallel Splunk installation requires root privileges.' });
+    }
+    if (typeof adminPassword !== 'string' || adminPassword.length < 12) {
+      return res.status(400).json({ success: false, error: 'A real admin password of at least 12 characters is required.' });
+    }
+    if (typeof pass4SymmKey !== 'string' || pass4SymmKey.length < 12) {
+      return res.status(400).json({ success: false, error: 'A real pass4SymmKey of at least 12 characters is required.' });
     }
     parallelActivePorts = { ...parallelActivePorts, ...ports };
     const log: string[] = [];
@@ -2471,7 +2482,7 @@ PASSWORD = ${password}
     // 4. Writing non-colliding base configuration files
     log.push(`[4/6] Generating isolated configuration stanzas...`);
     const webConf = `[settings]\nhttpport = ${ports.web}\nserver.socket_host = 0.0.0.0\nenableSplunkWebSSL = false\nstartwebserver = 1\nappServerPorts = 8066\nmgmtHostPort = 127.0.0.1:${ports.rest}\n`;
-    const serverConf = `[general]\nserverName = splunk-parallel-staging\nmgmtHostPort = 127.0.0.1:${ports.rest}\npass4SymmKey = changeme-parallel-key\nactive_group = Free\n\n[sslConfig]\nmgmtHostPort = 127.0.0.1:${ports.rest}\n\n[kvstore]\nport = ${ports.kvstore}\n`;
+    const serverConf = `[general]\nserverName = splunk-parallel-staging\nmgmtHostPort = 127.0.0.1:${ports.rest}\npass4SymmKey = ${pass4SymmKey}\nactive_group = Free\n\n[sslConfig]\nmgmtHostPort = 127.0.0.1:${ports.rest}\n\n[kvstore]\nport = ${ports.kvstore}\n`;
     const inputsConf = `[splunktcp://${ports.splunkTcp}]\ndisabled = 0\nqueueSize = 10MB\n`;
 
     try {
