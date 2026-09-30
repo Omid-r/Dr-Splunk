@@ -4331,306 +4331,46 @@ disabled = 0
 
   // Helper function to validate a specific tool by ID
   async function validateToolInternal(toolId: string) {
-    const startTime = Date.now();
-    const checks: Array<{ nameFa: string; nameEn: string; status: 'pass' | 'warn'; detailFa: string; detailEn: string }> = [];
-
-    // Common Check 1: API Endpoint & Process Environment
-    checks.push({
-      nameFa: 'پاسخ‌دهی وب سرویس و API سرور',
-      nameEn: 'API Server Endpoint Health',
-      status: 'pass',
-      detailFa: 'ارتباط سرور نود و پردازش درگاه API کاملاً فعال و پایدار است.',
-      detailEn: 'API engine responsive and operational.'
-    });
-
-    // Tool specific checks
-    switch (toolId) {
-      case 'autonomous_agent':
-        checks.push({
-          nameFa: 'موتور تحلیل آفلاین هوش مصنوعی',
-          nameEn: 'Offline AI Orchestration Engine',
-          status: 'pass',
-          detailFa: 'ماژول ارکستراسیون و تصمیم‌گیری هوشمند کلاستر آماده به کار است.',
-          detailEn: 'AI orchestration module loaded and ready.'
-        });
-        checks.push({
-          nameFa: 'دسترسی به اسکریپت‌های کانتینری و کوبرنتیز',
-          nameEn: 'Container & K8s Offline Scripts',
-          status: 'pass',
-          detailFa: 'اسکریپت‌های داکر و کوبرنتیز در مسیر اجرایی قرار دارند.',
-          detailEn: 'Container deployment scripts verified in runtime path.'
-        });
-        break;
-
-      case 'ai_diagnostics':
-        checks.push({
-          nameFa: 'ماژول خطایاب عمیق و پروب سوکت‌ها',
-          nameEn: 'Deep Diagnostic & Socket Probe Engine',
-          status: 'pass',
-          detailFa: 'پایشگر تداخل سوکت‌ها و قفل پورت‌ها فعال است.',
-          detailEn: 'Socket conflict prober and port lock detector ready.'
-        });
-        checks.push({
-          nameFa: 'پچ‌کننده خودکار فایل‌های پیکربندی',
-          nameEn: 'AI Auto-Patch Dispatcher',
-          status: 'pass',
-          detailFa: 'موتور جایگزینی خودکار استنزاهای معیوب در وضعیت آماده‌باش است.',
-          detailEn: 'Automated config stanza patch engine is standby and functional.'
-        });
-        break;
-
-      case 'cluster_deployer':
-        checks.push({
-          nameFa: 'ارکستریتور Bare-Metal و استقرار کلاستر',
-          nameEn: 'Bare-Metal & Deployer Orchestrator',
-          status: 'pass',
-          detailFa: 'ژنراتور اسکریپت‌های LOM، سایزینگ سخت‌افزار و کانفیگ کلاستر کاملاً اعتبارسنجی شد.',
-          detailEn: 'LOM, sizing and cluster deployment script generator fully verified.'
-        });
-        break;
-
-      case 'architecture_auditor':
-        checks.push({
-          nameFa: 'موتور تطبیق استانداردهای رسمی SVA',
-          nameEn: 'Splunk Validated Architectures Compliance',
-          status: 'pass',
-          detailFa: 'قوانین اعتبارسنجی C11 و ماتریس ظرفیت ایندکسرها تایید شدند.',
-          detailEn: 'SVA C11 ruleset and indexer capacity formulas certified.'
-        });
-        break;
-
-      case 'topology':
-        checks.push({
-          nameFa: 'نگاشت جریان داده و دیاگرام پورت‌ها',
-          nameEn: 'Port Channels & Data Flow Graph',
-          status: 'pass',
-          detailFa: 'کانال‌های پورت‌های ۸۰۸۹، ۹۹۹۷، ۸۰۰۰ و صف‌های حافظه به درستی بارگذاری شدند.',
-          detailEn: 'Ports 8089, 9997, 8000 and pipeline queue schema verified.'
-        });
-        break;
-
-      case 'management_nodes':
-        checks.push({
-          nameFa: 'پایش نودهای مدیریتی (LM/CM/DS)',
-          nameEn: 'Cluster Manager & License Master Prober',
-          status: 'pass',
-          detailFa: 'وضعیت لاینسس مستر، دیپلوییمنت سرور و کلاستر مستر نرمال ارزیابی شد.',
-          detailEn: 'License Master, Deployment Server and Cluster Master probe pass.'
-        });
-        break;
-
-      case 'commercial_license':
-        checks.push({
-          nameFa: 'تحلیل‌گر گواهینامه‌های امنیتی و لایسنس تجاری',
-          nameEn: 'PKI Certificate & Commercial License Engine',
-          status: 'pass',
-          detailFa: 'الگوریتم‌های رمزنگاری SHA256 و اعتبارسنجی امضای دیجیتال تایید شدند.',
-          detailEn: 'SHA256 signature verification and PKI cert analyzer verified.'
-        });
-        break;
-
-      case 'docker_k8s':
-        checks.push({
-          nameFa: 'درگاه اجرایی داکر و کوبرنتیز',
-          nameEn: 'Docker & Kubernetes Runtime',
-          status: 'pass',
-          detailFa: 'تمپلیت‌های Splunk Operator و مانیفست‌های کانتینری آماده استخراج هستند.',
-          detailEn: 'Splunk Operator templates and container manifests verified.'
-        });
-        break;
-
-      case 'health_audit': {
-        const splunkDir = '/opt/splunk/etc/system/local';
-        const files = ['inputs.conf', 'outputs.conf', 'server.conf', 'indexes.conf'];
-        let existingCount = 0;
-        let totalStanzas = 0;
-        files.forEach(f => {
-          const fp = path.join(splunkDir, f);
-          if (fs.existsSync(fp)) {
-            existingCount++;
-            const text = fs.readFileSync(fp, 'utf8');
-            const stanzas = (text.match(/\[[^\]]+\]/g) || []).length;
-            totalStanzas += stanzas;
-          }
-        });
-        checks.push({
-          nameFa: 'اسکن و پایش فایل‌های کانفیگ دیسک سرور',
-          nameEn: 'Disk Config File Scanner & Syntax Audit',
-          status: 'pass',
-          detailFa: `${existingCount} فایل کانفیگ اصلی (${files.join(', ')}) و مجموعاً ${totalStanzas} استنزا بررسی شدند. اسکن خط‌به‌خط بدون قطعی فعال است.`,
-          detailEn: `${existingCount} real config files and ${totalStanzas} stanzas validated on server disk.`
-        });
-        checks.push({
-          nameFa: 'صحت عملکرد موتور برطرف‌سازی خودکار خطاها (Remediation)',
-          nameEn: 'Remediation Engine & Patch Verification',
-          status: 'pass',
-          detailFa: 'سیستم ثبت اصلاحات و اعمال پچ‌ها بر روی سرور با قابلیت ذخیره و تست دیف فعال و تایید شد.',
-          detailEn: 'Config patch application and resolution persistence engine fully operational.'
-        });
-        break;
+    const started = Date.now();
+    const checks: Array<{ nameFa:string; nameEn:string; status:'pass'|'warn'; detailFa:string; detailEn:string }> = [];
+    const add = (fa:string,en:string,status:'pass'|'warn',df:string,de:string) => checks.push({nameFa:fa,nameEn:en,status,detailFa:df,detailEn:de});
+    try {
+      const root = typeof process.getuid === 'function' && process.getuid() === 0;
+      const ip = execSync('command -v ip 2>/dev/null || true',{encoding:'utf8'}).trim();
+      const ss = execSync('command -v ss 2>/dev/null || true',{encoding:'utf8'}).trim();
+      add('اجرای Root','Root execution',root?'pass':'warn',root?'سرویس با Root اجرا شده است.':'سرویس با Root اجرا نشده است.','Controller privilege state verified.');
+      add('ابزار ip','ip utility',ip?'pass':'warn',ip||'ابزار ip یافت نشد.','ip command availability checked.');
+      add('ابزار ss','ss utility',ss?'pass':'warn',ss||'ابزار ss یافت نشد.','ss command availability checked.');
+      if(toolId==='health_audit' || toolId==='topology' || toolId==='network_toolbox') {
+        const listeners = execSync('ss -H -tulpn 2>/dev/null || true',{encoding:'utf8'});
+        add('پایش سوکت‌های واقعی','Live socket probe','pass',`تعداد خطوط socket: ${listeners.split('\\n').filter(Boolean).length}`,`Live socket probe returned ${listeners.split('\\n').filter(Boolean).length} rows.`);
       }
-
-      case 'live_logs':
-        checks.push({
-          nameFa: 'پایشگر زنده splunkd.log و فیلتر عبارات باقاعده',
-          nameEn: 'splunkd.log Live Streamer & Regex Parser',
-          status: 'pass',
-          detailFa: 'پایپلاین خواندن بلادرنگ لاگ‌ها و سیستم کلیک برای حل مشکل فعال است.',
-          detailEn: 'Real-time log tail stream and interactive resolution engine active.'
-        });
-        break;
-
-      case 'config_editor': {
-        const testFile = '/opt/splunk/etc/system/local/.io_probe';
-        let diskIoOk = false;
-        try {
-          const testPayload = `probe_${Date.now()}`;
-          fs.writeFileSync(testFile, testPayload, 'utf8');
-          const readBack = fs.readFileSync(testFile, 'utf8');
-          if (readBack === testPayload) diskIoOk = true;
-          fs.unlinkSync(testFile);
-        } catch (_) {}
-        checks.push({
-          nameFa: 'بررسی دسترسی نوشتن و ذخیره‌سازی روی دیسک (Disk I/O Write)',
-          nameEn: 'Filesystem Write & Persistence Check',
-          status: diskIoOk ? 'pass' : 'warn',
-          detailFa: diskIoOk 
-            ? 'مجوز نوشتن روی مسیر /opt/splunk/etc/system/local/ با موفقیت تست شد. تغییرات ادیتور مستقیماً ذخیره می‌شوند.'
-            : 'دسترسی نوشتن مستقیم روی دیسک در حالت مجازی فعال است.',
-          detailEn: diskIoOk 
-            ? 'Write permissions on /opt/splunk/etc/system/local/ verified. Edits persist directly to disk.'
-            : 'Virtual memory persistence active.'
-        });
-        checks.push({
-          nameFa: 'صحت عملکرد موتور جستجوی کلمات و جایگزینی',
-          nameEn: 'Keyword Search & Replace Engine',
-          status: 'pass',
-          detailFa: 'موتور جستجوی کلمات، استنزاها، ناوبری بین یافته‌ها و جایگزینی دسته‌ای ۱۰۰٪ عملیاتی است.',
-          detailEn: 'Keyword, stanza search, navigation, and find-and-replace engine 100% operational.'
-        });
-        break;
+      if(toolId==='health_audit' || toolId==='config_editor' || toolId==='live_logs') {
+        const home = resolveSplunkDirectory({} as any);
+        const exists = fs.existsSync(path.join(home,'etc/system/local'));
+        add('مسیر کانفیگ اسپلانک','Splunk config path',exists?'pass':'warn',exists?`مسیر ${home}/etc/system/local موجود است.`:'مسیر کانفیگ اسپلانک یافت نشد.',exists?'Splunk local config directory exists.':'Splunk local config directory not found.');
       }
-
-      case 'doc_reference':
-        checks.push({
-          nameFa: 'بانک جامع مستندات فنی و راهنمای رسمی اسپلانک',
-          nameEn: 'Official Docs & Knowledge Repository',
-          status: 'pass',
-          detailFa: 'فهرست دستورالعمل‌ها، مستندات استنزاها و کدهای نمونه در دسترس هستند.',
-          detailEn: 'Documentation database, stanza reference, and examples indexed.'
-        });
-        break;
-
-      case 'heartbeat_radar':
-        checks.push({
-          nameFa: 'ماتریس هارت‌بیت و تشخیص قطعی نودها',
-          nameEn: 'Heartbeat Matrix & Drop Alarm Prober',
-          status: 'pass',
-          detailFa: 'حلقه‌های ۳۰ ثانیه‌ای پایش ضربان قلب و زنگ هشدار قطعی فعال می‌باشند.',
-          detailEn: 'Heartbeat timer intervals and outage detection triggers operational.'
-        });
-        break;
-
-      case 'alert_manager':
-        checks.push({
-          nameFa: 'سیستم توزیع هشدارها و اعلان‌ها',
-          nameEn: 'Alert Notification Dispatcher',
-          status: 'pass',
-          detailFa: 'درگاه پیامک، ایمیل و وب‌هوک SOC آماده دریافت رویدادهای بحرانی هستند.',
-          detailEn: 'Webhook, Email, and SMS notification gateways configured.'
-        });
-        break;
-
-      case 'network_sources':
-        checks.push({
-          nameFa: 'نگاشت منابع شبکه و تطبیق IP سورس‌ها',
-          nameEn: 'Source IP Mapper & Subnet Engine',
-          status: 'pass',
-          detailFa: 'تطبیق‌دهنده ساب‌نت و هدایت جریان لاگ به ایندکسرها به درستی کار می‌کند.',
-          detailEn: 'Subnet router and log forwarding mapper operational.'
-        });
-        break;
-
-      case 'component_agents':
-        checks.push({
-          nameFa: 'ژنراتور خودکار پکیج‌های نصبی ایجنت‌ها',
-          nameEn: 'Agent Package Builder & Cert Injector',
-          status: 'pass',
-          detailFa: 'فرآیند تولید پکیج امن UF/HF با اسکریپت نصب خودکار تایید شد.',
-          detailEn: 'Tailored agent package generation and script builder active.'
-        });
-        break;
-
-      case 'remote_gateway':
-        checks.push({
-          nameFa: 'درگاه دسترسی از راه دور و ارتباط mTLS',
-          nameEn: 'mTLS Secure Gateway & Remote Shell',
-          status: 'pass',
-          detailFa: 'تونل رمزنگاری و اجرای امن فرامین روی نودهای اسپلانک در دسترس است.',
-          detailEn: 'Encrypted tunnel and remote command dispatcher functional.'
-        });
-        break;
-
-      case 'package_center':
-        checks.push({
-          nameFa: 'مرکز تحویل بسته‌های باینری و فایل‌های دانلودی',
-          nameEn: 'Package Delivery Center Storage',
-          status: 'pass',
-          detailFa: 'دسترسی به پکیج‌های تارگت RHEL/CentOS و سرور آماده تحویل است.',
-          detailEn: 'Binary repository storage paths and download routes operational.'
-        });
-        break;
-
-      case 'backup_archive':
-        checks.push({
-          nameFa: 'مدیریت اسنپ‌شات‌ها و بازگردانی نسخه‌های پشتیبان',
-          nameEn: 'Backup Snapshot Manager & Rollback',
-          status: 'pass',
-          detailFa: 'قابلیت ایجاد اسنپ‌شات از کانفیگ‌ها و رول‌بک با یک کلیک تایید شد.',
-          detailEn: 'Snapshot storage and instant rollback verified.'
-        });
-        break;
-
-      case 'network_toolbox':
-        checks.push({
-          nameFa: 'جعبه ابزار شبکه و پروب مستقیم سوکت‌های TCP',
-          nameEn: 'TCP Socket & Port Reachability Toolbox',
-          status: 'pass',
-          detailFa: 'امکان تست زنده‌ی اتصال سوکت‌ها، پینگ و ردیابی مسیر کاملاً سالم است.',
-          detailEn: 'Live socket test, ping and traceroute engine functional.'
-        });
-        break;
-
-      case 'admin_security':
-        checks.push({
-          nameFa: 'سامانه احراز هویت RBAC و ممیزی امنیتی',
-          nameEn: 'Enterprise RBAC & Security Audit Store',
-          status: 'pass',
-          detailFa: 'اعتبارسنجی توکن‌های هش‌شده، تفکیک دسترسی و لاگ‌های ممیزی تایید شدند.',
-          detailEn: 'Token signature, role permission check, and audit logger verified.'
-        });
-        break;
-
-      default:
-        checks.push({
-          nameFa: 'بررسی عمومی یکپارچگی ابزار',
-          nameEn: 'General Tool Health Verification',
-          status: 'pass',
-          detailFa: 'ابزار مورد نظر با سیستم مرکزی هماهنگ است.',
-          detailEn: 'Tool is synchronized with core runtime.'
-        });
-        break;
+      if(toolId==='cluster_deployer' || toolId==='docker_k8s') {
+        const podman = execSync('command -v podman 2>/dev/null || true',{encoding:'utf8'}).trim();
+        const kubectl = execSync('command -v kubectl 2>/dev/null || true',{encoding:'utf8'}).trim();
+        add('Runtime آفلاین','Offline runtime',podman||kubectl?'pass':'warn',podman||kubectl?`Runtime found: ${[podman,kubectl].filter(Boolean).join(', ')}`:'Podman/kubectl not found on controller.','Container/Kubernetes runtime availability checked.');
+      }
+      if(toolId==='admin_security') {
+        const store = getSecurityStore();
+        add('RBAC Store','RBAC store',store.users.length>0?'pass':'warn',`کاربران ثبت‌شده: ${store.users.length}`,`Users in security store: ${store.users.length}`);
+      }
+    } catch(e:any) {
+      add('خطای موتور اعتبارسنجی','Validation engine','warn',e.message,e.message);
     }
-
-    const latencyMs = Math.floor(Math.random() * 8) + 8; // fast responsive 8-15ms
+    const failed = checks.filter(c=>c.status==='warn').length;
     return {
       toolId,
-      status: 'healthy',
-      score: 100,
-      latencyMs,
+      status: failed ? 'warning' : 'healthy',
+      score: Math.max(0,100-failed*10),
+      latencyMs: Date.now()-started,
       checks,
-      summaryFa: 'ابزار کاملاً سالم است، در پس‌زمینه سرور در حال کار می‌باشد و تمام اعتبارسنجی‌ها موفق بودند.',
-      summaryEn: 'Tool is operating at 100% health in the server background with all tests passing.'
+      summaryFa: failed ? `${failed} مورد نیازمند بررسی واقعی است.` : 'تمام تست‌های قابل اجرای واقعی موفق بودند.',
+      summaryEn: failed ? `${failed} real checks require attention.` : 'All executable real checks passed.'
     };
   }
 
