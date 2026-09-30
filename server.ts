@@ -2614,52 +2614,50 @@ PASSWORD = ${password}
     }
   });
 
-  // API: Copy all configurations from Real/Main Server to Parallel Instance
-  app.post('/api/parallel-cluster/copy-configs', (req, res) => {
+  // API: Copy configurations to a real parallel Splunk installation.
+  app.post('/api/parallel-cluster/copy-configs', async (req, res) => {
     const { configs = {}, targetPorts = { web: 8001, rest: 8090, splunkTcp: 9998 } } = req.body;
     const targetDir = '/opt/splunk_parallel/etc/system/local';
+    const allowedFiles = new Set(['inputs.conf','outputs.conf','server.conf','indexes.conf','props.conf','transforms.conf','limits.conf','web.conf','deploymentclient.conf','authentication.conf']);
     const copiedFiles: string[] = [];
     const sanitizedParams: string[] = [];
+    const sanitizedConfigs: Record<string,string> = {};
 
+    if (!configs || typeof configs !== 'object' || Array.isArray(configs)) {
+      return res.status(400).json({ success:false, error:'configs must be an object.' });
+    }
     try {
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
+      fs.mkdirSync(targetDir,{recursive:true});
+      for (const [filename, content] of Object.entries(configs)) {
+        if (!allowedFiles.has(filename)) return res.status(400).json({ success:false,error:`Unsupported config file: ${filename}`});
+        let mod=String(content);
+        if(filename==='inputs.conf'){
+          mod=mod.replace(/\[splunktcp:\/\/9997\]/g,`[splunktcp:${Number(targetPorts.splunkTcp)||9998}]`);
+          sanitizedParams.push('inputs.conf: remapped splunktcp 9997 to selected ingest port');
+        } else if(filename==='web.conf'){
+          mod=mod.replace(/httpport\s*=\s*8000/g,`httpport = ${Number(targetPorts.web)||8001}`);
+          sanitizedParams.push('web.conf: remapped httpport 8000 to selected web port');
+        } else if(filename==='server.conf'){
+          mod=mod.replace(/mgmtHostPort\s*=\s*127\.0\.0\.1:8089/g,`mgmtHostPort = 127.0.0.1:${Number(targetPorts.rest)||8090}`)
+                 .replace(/\[general\]\nserverName\s*=\s*[^\n]+/g,'[general]\nserverName = splunk-parallel-staging-01');
+          sanitizedParams.push('server.conf: remapped local management port and serverName');
+        }
+        const full=path.join(targetDir,filename);
+        fs.writeFileSync(full,mod,'utf8');
+        sanitizedConfigs[filename]=mod;
+        copiedFiles.push(filename);
       }
-    } catch (_) {}
-
-    const sanitizedConfigs: Record<string, string> = {};
-
-    Object.entries(configs).forEach(([filename, content]) => {
-      let mod = String(content);
-      if (filename === 'inputs.conf') {
-        mod = mod.replace(/\[splunktcp:\/\/9997\]/g, `[splunktcp://${targetPorts.splunkTcp || 9998}]`);
-        sanitizedParams.push('inputs.conf: remapped splunktcp 9997 -> 9998');
-      } else if (filename === 'web.conf') {
-        mod = mod.replace(/httpport\s*=\s*8000/g, `httpport = ${targetPorts.web || 8001}`);
-        sanitizedParams.push(`web.conf: remapped httpport 8000 -> ${targetPorts.web || 8001}`);
-      } else if (filename === 'server.conf') {
-        mod = mod.replace(/mgmtHostPort\s*=\s*127\.0\.0\.1:8089/g, `mgmtHostPort = 127.0.0.1:${targetPorts.rest || 8090}`)
-                 .replace(/\[general\]\nserverName\s*=\s*[^\n]+/g, `[general]\nserverName = splunk-parallel-staging-01`);
-        sanitizedParams.push(`server.conf: remapped mgmtHostPort 8089 -> ${targetPorts.rest || 8090} and renamed serverName`);
+      let btoolResult:any=null;
+      const binary=path.join('/opt/splunk_parallel','bin','splunk');
+      if(fs.existsSync(binary)){
+        const btool=await runCommand(`SPLUNK_HOME="/opt/splunk_parallel" "${binary}" btool check`,{cwd:'/opt/splunk_parallel',timeout:30000});
+        btoolResult={exitCode:btool.code,stdout:btool.stdout,stderr:btool.stderr};
+        if(btool.code!==0) return res.status(500).json({success:false,copiedFiles,sanitizedParams,sanitizedConfigs,btoolResult,error:'btool check failed after configuration sync.'});
       }
-
-      sanitizedConfigs[filename] = mod;
-      copiedFiles.push(filename);
-
-      try {
-        fs.writeFileSync(path.join(targetDir, filename), mod, 'utf8');
-      } catch (_) {}
-    });
-
-    res.json({
-      success: true,
-      copiedCount: copiedFiles.length,
-      copiedFiles,
-      sanitizedParams,
-      btoolResult: 'btool check: 0 stanza collisions, all sanitized ports validated.',
-      sanitizedConfigs,
-      syncedAt: new Date().toISOString()
-    });
+      return res.json({success:true,copiedCount:copiedFiles.length,copiedFiles,sanitizedParams,btoolResult,sanitizedConfigs,syncedAt:new Date().toISOString()});
+    } catch(e:any) {
+      return res.status(500).json({success:false,error:e.message,copiedFiles,sanitizedParams});
+    }
   });
 
   // API: Deep Diagnostic Probe across host, configs, sockets, and container runtimes
