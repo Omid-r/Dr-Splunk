@@ -3,13 +3,18 @@ name: build-offline-rhel
 on:
   push:
     branches:
+      - main
       - feature/real-offline-orchestrator
+      - fix/real-offline-validation-20260930
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       ref:
         description: 'Branch or tag to build'
-        required: true
-        default: 'feature/real-offline-orchestrator'
+        required: false
+        default: 'main'
 
 jobs:
   build:
@@ -37,6 +42,9 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Real control-plane smoke test
+        run: node scripts/smoke-test-real-control-plane.mjs
+
       - name: Make standalone RHEL package
         shell: bash
         run: |
@@ -53,6 +61,8 @@ jobs:
           test -f dist/index.html
           test -f dist/server.cjs
 
+          # Never ship runtime-generated credentials/state from CI or the developer workspace.
+          rm -f data/security-db.json data/master-signing.key
           cp -a dist "$PKG/"
           cp -a scripts "$PKG/"
           cp -a public "$PKG/" 2>/dev/null || true
@@ -79,9 +89,10 @@ jobs:
 
           cp -a "$BASE/." "$TARGET/"
 
-          chmod -R u+rwX,go+rX "$TARGET"
-          chmod +x "$TARGET/node-runtime/bin/node" 2>/dev/null || true
-          chmod +x "$TARGET/setup.sh" "$TARGET/scripts/"*.sh 2>/dev/null || true
+          find "$TARGET" -type d -exec chmod 755 {} +
+          find "$TARGET" -type f -exec chmod 644 {} +
+          chmod +x "$TARGET/node-runtime/bin/node" "$TARGET/setup.sh" "$TARGET/scripts/"*.sh 2>/dev/null || true
+          chmod 600 "$TARGET/data/master-signing.key" 2>/dev/null || true
 
           cat > /etc/systemd/system/splunk-doctor.service <<EOF2
           [Unit]
@@ -99,6 +110,7 @@ jobs:
           Environment=NODE_ENV=production
           Environment=PORT=3000
           Environment=SPLUNK_HOME=/opt/splunk
+          UMask=0077
           LimitNOFILE=65536
           LimitNPROC=65536
 

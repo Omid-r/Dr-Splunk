@@ -8,6 +8,7 @@ import { UserAccount, UserRole, UserPermissions, getDefaultPermissionsForRole, A
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'security-db.json');
 const SECRET_KEY_PATH = path.join(DATA_DIR, 'master-signing.key');
+const BOOTSTRAP_PASSWORD_PATH = '/var/lib/splunk-doctor/bootstrap-admin-password';
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -265,11 +266,36 @@ function seedInitialStore(): SecurityStore {
   const in14Days = new Date(now);
   in14Days.setDate(now.getDate() + 14);
 
-  // Default Users with cryptographically salted PBKDF2 hashes
-  const adminPass = hashPassword('Splunk@Doctor2026!');
-  const engineerPass = hashPassword('Splunk@Engineer2026!');
-  const operatorPass = hashPassword('Splunk@Operator2026!');
-  const auditorPass = hashPassword('Splunk@Auditor2026!');
+  // Fresh installs use an explicit or generated bootstrap password.
+  // No fixed production password is embedded in source control.
+  function getInitialAdminPassword(): string {
+    const envPassword = String(process.env.SPLUNK_DOCTOR_BOOTSTRAP_PASSWORD || '').trim();
+    if (envPassword.length >= 12) {
+      try {
+        fs.mkdirSync(path.dirname(BOOTSTRAP_PASSWORD_PATH), { recursive: true });
+        fs.writeFileSync(BOOTSTRAP_PASSWORD_PATH, envPassword + '\n', { mode: 0o600 });
+      } catch (_) {}
+      return envPassword;
+    }
+    try {
+      if (fs.existsSync(BOOTSTRAP_PASSWORD_PATH)) {
+        const stored = fs.readFileSync(BOOTSTRAP_PASSWORD_PATH, 'utf8').trim();
+        if (stored.length >= 12) return stored;
+      }
+    } catch (_) {}
+    const generated = crypto.randomBytes(24).toString('base64url');
+    try {
+      fs.mkdirSync(path.dirname(BOOTSTRAP_PASSWORD_PATH), { recursive: true });
+      fs.writeFileSync(BOOTSTRAP_PASSWORD_PATH, generated + '\n', { mode: 0o600 });
+    } catch (_) {}
+    return generated;
+  }
+
+  const initialPassword = getInitialAdminPassword();
+  const adminPass = hashPassword(initialPassword);
+  const engineerPass = hashPassword(initialPassword + '-engineer');
+  const operatorPass = hashPassword(initialPassword + '-operator');
+  const auditorPass = hashPassword(initialPassword + '-auditor');
 
   const users: InternalUserAccount[] = [
     {
@@ -335,10 +361,7 @@ function seedInitialStore(): SecurityStore {
   ];
 
   const hwId = getHardwareFingerprint();
-  // Auto-generate a valid initial commercial trial license for this specific hardware ID
-  const trialExp = new Date(now);
-  trialExp.setDate(now.getDate() + 90);
-  const initialKey = generateSignedLicenseKey(hwId, 'Splunk Enterprise Customer', 'ENTERPRISE_COMMERCIAL', trialExp.toISOString(), 100);
+  // Fresh installations start unlicensed. Real Splunk/commercial licenses are operator-supplied offline artifacts.
 
   const initialLogs: AuditLogEntry[] = [
     {
@@ -355,22 +378,22 @@ function seedInitialStore(): SecurityStore {
       id: 'log-seed-02',
       timestamp: now.toISOString(),
       username: 'SYSTEM',
-      action: 'COMMERCIAL_LICENSE_BINDING',
+      action: 'LICENSE_INITIAL_STATE',
       category: 'LICENSE',
       status: 'SUCCESS',
       ip: '127.0.0.1',
-      details: `لایسنس تجاری روی اثرانگشت سخت‌افزاری ${hwId} قفل و فعال شد.`
+      details: `نصب اولیه بدون لایسنس تجاری فعال شد؛ سخت‌افزار ${hwId} برای بررسی لایسنس‌های واقعی ثبت شد.`
     }
   ];
 
   return {
     users,
     license: {
-      companyName: 'Splunk Enterprise Customer',
-      licenseKey: initialKey,
-      tier: 'ENTERPRISE_COMMERCIAL',
-      expiresAt: trialExp.toISOString(),
-      maxNodes: 100,
+      companyName: 'Unlicensed Offline Installation',
+      licenseKey: '',
+      tier: 'COMMUNITY',
+      expiresAt: '',
+      maxNodes: 2,
       activatedAt: now.toISOString()
     },
     auditLogs: initialLogs
