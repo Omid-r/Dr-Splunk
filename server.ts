@@ -3182,41 +3182,36 @@ let httpCode = '000';
   app.post('/api/parallel-cluster/auto-heal-all', handleAutoHeal);
   app.post('/api/parallel-cluster/ai-auto-heal', handleAutoHeal);
 
-  // API: Targeted Single Issue Auto-Fix (Fixes individual issue clicked in UI)
+  // API: Targeted Single Issue Auto-Fix. Only real, explicitly registered remediations are allowed.
   app.post('/api/parallel-cluster/fix-individual-issue', async (req, res) => {
-    const { issueId, serverType = 'parallel', targetDir = '/opt/splunk_parallel' } = req.body;
+    const { issueId, targetDir = '/opt/splunk_parallel' } = req.body;
+    const allowedTarget = targetDir === '/opt/splunk_parallel' || targetDir === '/opt/splunk';
+    if (!allowedTarget) return res.status(400).json({ success:false, error:'Unsupported target directory.' });
+    const splunkBinary = path.join(targetDir, 'bin/splunk');
+
+    if (issueId === 'diag-auth-seed-missing') {
+      return res.status(400).json({ success:false, issueId, error:'Default administrator credentials are disabled. Use the authenticated installation flow with a real password.' });
+    }
+
     let commandToRun = '';
     let toolNameFa = 'اصلاح خطای اختصاصی عیب‌یابی';
     let toolNameEn = 'Single Issue Targeted Auto-Fix';
 
     if (issueId === 'diag-kvstore-collision') {
-      toolNameFa = 'رفع تداخل پورت KVStore و تنظیم پورت 8193';
-      toolNameEn = 'Fix KVStore Port Collision (Set Port 8193)';
-      commandToRun = `mkdir -p "${targetDir}/etc/system/local" && (grep -q "\\[kvstore\\]" "${targetDir}/etc/system/local/server.conf" 2>/dev/null && sed -i 's/port\\s*=\\s*8192/port = 8193/g' "${targetDir}/etc/system/local/server.conf" || echo -e "\\n[kvstore]\\nport = 8193" >> "${targetDir}/etc/system/local/server.conf") && echo "[SUCCESS] KVStore port updated to 8193"`;
+      toolNameFa = 'رفع تداخل پورت KVStore';
+      toolNameEn = 'Fix KVStore port collision';
+      commandToRun = `mkdir -p "${targetDir}/etc/system/local" && (grep -q "\\[kvstore\\]" "${targetDir}/etc/system/local/server.conf" 2>/dev/null && sed -i 's/port\\s*=\\s*8192/port = 8193/g' "${targetDir}/etc/system/local/server.conf" || printf '\\n[kvstore]\\nport = 8193\\n' >> "${targetDir}/etc/system/local/server.conf")`;
     } else if (issueId === 'diag-web-conf-mgmt' || issueId === 'diag-web-mgmt-mismatch') {
-      toolNameFa = 'تنظیم mgmtHostPort = 127.0.0.1:8090 در web.conf';
-      toolNameEn = 'Sync mgmtHostPort in web.conf';
-      commandToRun = `mkdir -p "${targetDir}/etc/system/local" && (grep -q "\\[settings\\]" "${targetDir}/etc/system/local/web.conf" 2>/dev/null && sed -i 's/mgmtHostPort.*/mgmtHostPort = 127.0.0.1:8090/g' "${targetDir}/etc/system/local/web.conf" || echo -e "[settings]\\nhttpport = 8001\\nmgmtHostPort = 127.0.0.1:8090" >> "${targetDir}/etc/system/local/web.conf") && echo "[SUCCESS] web.conf synchronized with REST mgmtHostPort=8090"`;
-    } else if (issueId === 'virt-docker-perm') {
-      toolNameFa = 'اصلاح دسترسی و مالکیت فایل‌های داکر لینوکس';
-      toolNameEn = 'Fix Docker Volume Linux Ownership (4181:4181)';
-      commandToRun = `mkdir -p /var/lib/splunk_virtual && chown -R 4181:4181 /var/lib/splunk_virtual 2>/dev/null || true && chmod -R 755 /var/lib/splunk_virtual && echo "[SUCCESS] Linux filesystem permissions fixed for UID 4181"`;
-    } else if (issueId === 'virt-heartbeat-out') {
-      toolNameFa = 'راه‌اندازی مجدد کانتینر اسپلانک مجازی و رفع هارت‌بیت';
-      toolNameEn = 'Restart Virtual Splunk Container';
-      commandToRun = `fuser -k 8080/tcp 2>/dev/null || true; docker restart splunk_virtual_node 2>/dev/null || podman restart splunk_virtual_node 2>/dev/null || echo "[SUCCESS] Container restart signal sent to port 8080"`;
-    } else if (issueId === 'diag-auth-seed-missing') {
-      toolNameFa = 'ایجاد فایل user-seed.conf برای ادمین';
-      toolNameEn = 'Create Default Admin user-seed.conf';
-      commandToRun = `mkdir -p "${targetDir}/etc/system/local" && echo -e "[user_info]\\nUSERNAME = admin\\nPASSWORD = changeme" > "${targetDir}/etc/system/local/user-seed.conf" && chmod 600 "${targetDir}/etc/system/local/user-seed.conf" && echo "[SUCCESS] user-seed.conf initialized with admin credentials"`;
+      toolNameFa = 'تنظیم mgmtHostPort واقعی در web.conf';
+      toolNameEn = 'Sync real mgmtHostPort';
+      commandToRun = `mkdir -p "${targetDir}/etc/system/local" && (grep -q "\\[settings\\]" "${targetDir}/etc/system/local/web.conf" 2>/dev/null && sed -i 's/mgmtHostPort.*/mgmtHostPort = 127.0.0.1:8090/g' "${targetDir}/etc/system/local/web.conf" || printf '[settings]\\nhttpport = 8001\\nmgmtHostPort = 127.0.0.1:8090\\n' >> "${targetDir}/etc/system/local/web.conf")`;
     } else if (issueId === 'diag-rest-mgmt-closed' || issueId === 'diag-web-http-listener') {
-      toolNameFa = 'آزادسازی سوکت‌های مسدود و ریستارت دیمن اسپلانک';
-      toolNameEn = 'Unlock Sockets & Restart Daemon';
-      commandToRun = `fuser -k 8001/tcp 8090/tcp 2>/dev/null || true && SPLUNK_HOME="${targetDir}" "${targetDir}/bin/splunk" restart --accept-license --answer-yes --no-prompt --run-as-root 2>&1 || echo "[INFO] Splunk restart executed."`;
+      if (!fs.existsSync(splunkBinary)) return res.status(404).json({ success:false, issueId, error:'Real Splunk binary not found at target.' });
+      toolNameFa = 'ریستارت واقعی دیمن اسپلانک';
+      toolNameEn = 'Restart real Splunk daemon';
+      commandToRun = `SPLUNK_HOME="${targetDir}" "${splunkBinary}" restart --accept-license --answer-yes --no-prompt --run-as-root`;
     } else {
-      toolNameFa = `اصلاح خودکار خطای ${issueId}`;
-      toolNameEn = `Auto-Fix Issue ${issueId}`;
-      commandToRun = `fuser -k 8001/tcp 8090/tcp 2>/dev/null || true && echo "[SUCCESS] Diagnostic fix command executed for ${issueId}"`;
+      return res.status(400).json({ success:false, issueId, error:'No real remediation command is registered for this issue.' });
     }
 
     const result = await runCommand(commandToRun, {
@@ -3227,7 +3222,7 @@ let httpCode = '000';
       category: 'splunk'
     });
 
-    res.json({
+    return res.status(result.code === 0 ? 200 : 500).json({
       success: result.code === 0,
       issueId,
       command: commandToRun,
