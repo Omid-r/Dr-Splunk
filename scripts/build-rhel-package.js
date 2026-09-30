@@ -185,8 +185,10 @@ echo "[+] Installing Splunk Cluster Doctor to $TARGET_DIR..."
 
 mkdir -p "$TARGET_DIR"
 cp -r ./* "$TARGET_DIR/"
-chmod -R 755 "$TARGET_DIR"
+find "$TARGET_DIR" -type d -exec chmod 755 {} +
+find "$TARGET_DIR" -type f -exec chmod 644 {} +
 chmod +x "$TARGET_DIR"/*.sh "$TARGET_DIR"/scripts/*.sh 2>/dev/null || true
+chmod 600 "$TARGET_DIR/data/master-signing.key" 2>/dev/null || true
 
 # Prefer the bundled Node.js runtime for the systemd service.
 NODE_PATH="/opt/splunk-doctor/node-runtime/bin/node"
